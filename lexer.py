@@ -21,6 +21,13 @@ class Lexer:
         self.paren_depth = 0
 
     def tokenize(self):
+        # Strip leading blank lines/spaces at the very start of the file
+        while self.pos < len(self.source) and self.source[self.pos] in ' \t\r\n':
+            if self.source[self.pos] == '\n':
+                self.line += 1
+            self.pos += 1
+        self.col = 1
+
         while self.pos < len(self.source):
             ch = self._peek()
             if ch in ' \t\r':
@@ -63,29 +70,34 @@ class Lexer:
     def _handle_newline(self):
         if self.paren_depth > 0:
             self._advance(); return
+            
         temp_pos, temp_line, temp_col = self.pos, self.line, self.col
-        while True:
-            self._advance()
-            while self._peek() in ' \t\r': self._advance()
-            if self._peek() in '\n#':
-                if self._peek() == '#':
-                    while self._peek() not in '\n\0': self._advance()
-                if self._peek() == '\n': continue
-                else: break
-            else: break
+        
+        # Look ahead to count spaces on the NEXT line
+        lookahead = self.pos + 1
+        indent_spaces = 0
+        while lookahead < len(self.source) and self.source[lookahead] in ' \t':
+            indent_spaces += 4 if self.source[lookahead] == '\t' else 1
+            lookahead += 1
+            
+        # If the next line is empty or just a comment, don't emit NEWLINE/INDENT/DEDENT
+        if lookahead >= len(self.source) or self.source[lookahead] in '\n#':
+            self._advance() # just consume the newline
+            return
+
+        self._advance() # Consume the newline
         self.tokens.append(Token(TokenType.NEWLINE, '\n', temp_line, temp_col))
-        if self._peek() != '\0':
-            indent_spaces = 0
-            while self._peek() in ' \t':
-                indent_spaces += 4 if self._peek() == '\t' else 1
-                self._advance()
-            if indent_spaces > self.indent_stack[-1]:
-                self.indent_stack.append(indent_spaces)
-                self.tokens.append(Token(TokenType.INDENT, indent_spaces, self.line, self.col))
-            else:
-                while indent_spaces < self.indent_stack[-1]:
-                    self.indent_stack.pop()
-                    self.tokens.append(Token(TokenType.DEDENT, indent_spaces, self.line, self.col))
+
+        # Apply the lookahead indentation
+        self.pos = lookahead
+        self.col = indent_spaces + 1
+        if indent_spaces > self.indent_stack[-1]:
+            self.indent_stack.append(indent_spaces)
+            self.tokens.append(Token(TokenType.INDENT, indent_spaces, self.line, self.col))
+        else:
+            while indent_spaces < self.indent_stack[-1]:
+                self.indent_stack.pop()
+                self.tokens.append(Token(TokenType.DEDENT, indent_spaces, self.line, self.col))
 
     def _number(self):
         line, col = self.line, self.col

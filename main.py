@@ -13,7 +13,7 @@ while x > 0:
     if x == 5:
         print("Halfway there!")
     print(x)
-    x = x - 2
+    x = x - 1
 
 for i in range(3):
     print("Loop iteration: " + str(i))

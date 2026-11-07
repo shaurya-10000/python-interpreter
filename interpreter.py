@@ -45,28 +45,33 @@ class Interpreter:
             val = self._eval_expr(node.value, env)
             env.set(node.name, val)
         elif isinstance(node, IfStmt):
+            # Evaluate the if condition
             if self._is_truthy(self._eval_expr(node.condition, env)):
-                self._eval_block(node.then_branch, Environment(env))
-            else:
-                for cond, body in node.elif_branches:
-                    if self._is_truthy(self._eval_expr(cond, env)):
-                        self._eval_block(body, Environment(env))
-                        return
-                if node.else_branch:
-                    self._eval_block(node.else_branch, Environment(env))
+                self._eval_block(node.then_branch, env)
+                return # Exit after executing the 'if' branch
+                
+            # Check elif branches
+            for cond, body in node.elif_branches:
+                if self._is_truthy(self._eval_expr(cond, env)):
+                    self._eval_block(body, env)
+                    return # Exit after executing an 'elif' branch
+                    
+            # Execute else branch if no conditions matched
+            if node.else_branch:
+                self._eval_block(node.else_branch, env)
+                
         elif isinstance(node, WhileStmt):
             while self._is_truthy(self._eval_expr(node.condition, env)):
                 try:
-                    self._eval_block(node.body, Environment(env))
+                    self._eval_block(node.body, env)
                 except BreakException: break
                 except ContinueException: continue
         elif isinstance(node, ForStmt):
             iterable = self._eval_expr(node.iterable, env)
             for item in iterable:
-                loop_env = Environment(env)
-                loop_env.set(node.target, item)
+                env.set(node.target, item)
                 try:
-                    self._eval_block(node.body, loop_env)
+                    self._eval_block(node.body, env)
                 except BreakException: break
                 except ContinueException: continue
         elif isinstance(node, FuncDef):
