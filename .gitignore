@@ -12,3 +12,8 @@ ENV/
 # OS files
 .DS_Store
 Thumbs.db
+fix*.py
+rest.py
+lex.py
+patch*.py
+fstr.py
