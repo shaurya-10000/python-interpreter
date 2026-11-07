@@ -68,7 +68,7 @@ Requires Python 3.12 or newer.
 
 Run a script:
 
-    python main.py demo.py
+    python main.py demo/01_basics.py
 
 Start the REPL:
 
