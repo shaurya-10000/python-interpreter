@@ -1,35 +1,51 @@
+import sys
 from lexer import Lexer
 from parser import Parser
 from interpreter import Interpreter
 
-test_code = """
-class Dog:
-    def __init__(self, name, breed):
-        self.name = name
-        self.breed = breed
-        
-    def bark(self):
-        print(self.name + " says Woof!")
-        
-    def get_info(self):
-        return self.name + " is a " + self.breed
+def run_source(source: str, interpreter: Interpreter):
+    try:
+        lexer = Lexer(source)
+        tokens = lexer.tokenize()
+        parser = Parser(tokens)
+        ast = parser.parse()
+        interpreter.run(ast)
+    except SyntaxError as e:
+        print(f"Syntax Error: {e}")
+    except NameError as e:
+        print(f"Name Error: {e}")
+    except Exception as e:
+        print(f"Error: {e}")
 
-my_dog = Dog("Buddy", "Golden Retriever")
-print(my_dog.name)
-my_dog.bark()
-print(my_dog.get_info())
+def main():
+    interpreter = Interpreter()
 
-my_dog.name = "Max"
-print(my_dog.name)
-my_dog.bark()
-"""
+    # Mode 1: Run a file
+    if len(sys.argv) > 1:
+        filename = sys.argv[1]
+        try:
+            with open(filename, "r") as f:
+                source = f.read()
+            print(f"--- Running {filename} ---")
+            run_source(source, interpreter)
+        except FileNotFoundError:
+            print(f"File not found: {filename}")
+        return
 
-print("--- EXECUTING OOP TEST ---")
-lexer = Lexer(test_code)
-tokens = lexer.tokenize()
+    # Mode 2: REPL
+    print("PySubset Interpreter v1.0")
+    print("Type 'exit()' to quit.\n")
+    while True:
+        try:
+            line = input(">>> ")
+            if line.strip() in ("exit()", "quit()", "exit", "quit"):
+                break
+            if not line.strip():
+                continue
+            run_source(line, interpreter)
+        except (KeyboardInterrupt, EOFError):
+            print("\nGoodbye!")
+            break
 
-parser = Parser(tokens)
-ast = parser.parse()
-
-interpreter = Interpreter()
-interpreter.run(ast)
+if __name__ == "__main__":
+    main()
