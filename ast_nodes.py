@@ -66,3 +66,12 @@ class TryStmt: try_block: Any; except_var: str; except_block: Any
 class RaiseStmt: value: Any; line: int = 0
 @dataclass
 class AssertStmt: test: Any; msg: Any; line: int = 0
+
+@dataclass
+class IfExpr: cond: Any; then: Any; other: Any; line: int = 0
+@dataclass
+class Lambda: params: List[str]; body: Any; line: int = 0
+@dataclass
+class SliceExpr: lower: Any; upper: Any; step: Any; line: int = 0
+@dataclass
+class DictComp: key: Any; value: Any; target: str; iterable: Any; condition: Any; line: int = 0

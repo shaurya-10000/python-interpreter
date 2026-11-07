@@ -283,6 +283,29 @@ class Interpreter:
                 if method: return lambda *args: method(obj, *args)
                 raise AttributeError(f"'{obj.cls.name}' object has no attribute '{name}'")
             return getattr(obj, name)
+        if isinstance(node, IfExpr):
+            if self._is_truthy(self._eval_expr(node.cond, env)): return self._eval_expr(node.then, env)
+            return self._eval_expr(node.other, env)
+        if isinstance(node, SliceExpr):
+            lo = self._eval_expr(node.lower, env) if node.lower is not None else None
+            up = self._eval_expr(node.upper, env) if node.upper is not None else None
+            st = self._eval_expr(node.step, env) if node.step is not None else None
+            return slice(lo, up, st)
+        if isinstance(node, Lambda):
+            def lam(*args):
+                lam_env = Environment(env)
+                for i, p in enumerate(node.params):
+                    lam_env.set(p, args[i] if i < len(args) else None)
+                return self._eval_expr(node.body, lam_env)
+            return lam
+        if isinstance(node, DictComp):
+            result = {}
+            for item in self._eval_expr(node.iterable, env):
+                loop_env = Environment(env)
+                loop_env.set(node.target, item)
+                if node.condition is None or self._is_truthy(self._eval_expr(node.condition, loop_env)):
+                    result[self._eval_expr(node.key, loop_env)] = self._eval_expr(node.value, loop_env)
+            return result
         if isinstance(node, BinOp):
             left = self._eval_expr(node.left, env); right = self._eval_expr(node.right, env); op = node.op
             if op == "+": return left + right
@@ -298,6 +321,10 @@ class Interpreter:
             if op == ">": return left > right
             if op == "<=": return left <= right
             if op == ">=": return left >= right
+            if op == "in": return left in right
+            if op == "not in": return left not in right
+            if op == "is": return left is right
+            if op == "is not": return left is not right
             if op == "and": return right if self._is_truthy(left) else left
             if op == "or": return left if self._is_truthy(left) else right
             raise RuntimeError(f"Unknown operator {op}")

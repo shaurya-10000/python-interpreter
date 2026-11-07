@@ -44,8 +44,16 @@ class Parser:
         if self._match(TokenType.PASS): self._expect(TokenType.NEWLINE); return PassStmt()
         if self._match(TokenType.BREAK): self._expect(TokenType.NEWLINE); return BreakStmt()
         if self._match(TokenType.CONTINUE): self._expect(TokenType.NEWLINE); return ContinueStmt()
-        
+
         expr = self._expression()
+        # Augmented assignment: x += 1  ->  x = x + 1
+        if self._match(TokenType.AUG_ASSIGN):
+            op = self.tokens[self.pos - 1].value[:-1]
+            if not isinstance(expr, (Var, Subscript, Attribute)):
+                raise SyntaxError(f"Line {ln}: Invalid augmented assignment target")
+            value = self._expression()
+            self._expect(TokenType.NEWLINE)
+            return Assign(expr, BinOp(expr, op, value, line=ln), line=ln)
         # Tuple assignment target: 'a, b = ...' parses as TupleExpr(left)
         if self._match(TokenType.COMMA):
             elements = [expr, self._expression()]
@@ -79,6 +87,8 @@ class Parser:
         try_block = self._block()
         self._expect(TokenType.EXCEPT)
         except_var = None
+        if self._check(TokenType.IDENTIFIER):
+            self.pos += 1  # exception class name: accepted but not matched
         if self._match(TokenType.AS): except_var = self._expect(TokenType.IDENTIFIER).value
         except_block = self._block()
         return TryStmt(try_block, except_var, except_block)
@@ -149,7 +159,26 @@ class Parser:
         if self._check(TokenType.NEWLINE): self._advance(); return ReturnStmt(None, line=ln)
         val = self._expression(); self._match(TokenType.NEWLINE); return ReturnStmt(val, line=ln)
 
-    def _expression(self): return self._or()
+    def _expression(self):
+        if self._match(TokenType.LAMBDA):
+            ln = self.tokens[self.pos - 1].line
+            params = []
+            if not self._check(TokenType.COLON):
+                while True:
+                    params.append(self._expect(TokenType.IDENTIFIER).value)
+                    if not self._match(TokenType.COMMA): break
+            self._expect(TokenType.COLON)
+            return Lambda(params, self._expression(), line=ln)
+        expr = self._or()
+        if self._check(TokenType.IF):
+            ln = self._cur().line
+            self.pos += 1
+            cond = self._or()
+            self._expect(TokenType.ELSE)
+            other = self._expression()
+            return IfExpr(cond, expr, other, line=ln)
+        return expr
+
     def _or(self):
         expr = self._and()
         while self._match(TokenType.OR): expr = BinOp(expr, "or", self._and())
@@ -162,10 +191,27 @@ class Parser:
         if self._match(TokenType.NOT): return UnaryOp("not", self._not())
         return self._comparison()
     def _comparison(self):
-        expr = self._addition()
-        while self._match(TokenType.EQ, TokenType.NEQ, TokenType.LT, TokenType.GT, TokenType.LTE, TokenType.GTE):
-            expr = BinOp(expr, self.tokens[self.pos - 1].value, self._addition())
-        return expr
+        ln = self._cur().line
+        left = self._addition()
+        result = None
+        while True:
+            if self._match(TokenType.EQ, TokenType.NEQ, TokenType.LT, TokenType.GT, TokenType.LTE, TokenType.GTE):
+                op = self.tokens[self.pos - 1].value
+            elif self._match(TokenType.IN):
+                op = "in"
+            elif self._check(TokenType.NOT) and self.tokens[self.pos + 1].type == TokenType.IN:
+                self.pos += 2
+                op = "not in"
+            elif self._match(TokenType.IS):
+                op = "is not" if self._match(TokenType.NOT) else "is"
+            else:
+                break
+            right = self._addition()
+            cmp = BinOp(left, op, right, line=ln)
+            result = cmp if result is None else BinOp(result, "and", cmp, line=ln)
+            left = right
+        return result if result is not None else left
+
     def _addition(self):
         expr = self._multiplication()
         while self._match(TokenType.PLUS, TokenType.MINUS):
@@ -196,11 +242,28 @@ class Parser:
                         if not self._match(TokenType.COMMA): break
                 self._expect(TokenType.RPAREN); expr = Call(expr, args, line=ln)
             elif self._match(TokenType.LBRACKET):
-                idx = self._expression(); self._expect(TokenType.RBRACKET); expr = Subscript(expr, idx, line=ln)
+                expr = Subscript(expr, self._subscript_index(), line=ln)
             elif self._match(TokenType.DOT):
                 expr = Attribute(expr, self._expect(TokenType.IDENTIFIER).value, line=ln)
             else: break
         return expr
+
+    def _subscript_index(self):
+        ln = self._cur().line
+        lower = None if self._check(TokenType.COLON) else self._expression()
+        if not self._check(TokenType.COLON):
+            self._expect(TokenType.RBRACKET)
+            return lower
+        self._advance()
+        upper = step = None
+        if not self._check(TokenType.RBRACKET) and not self._check(TokenType.COLON):
+            upper = self._expression()
+        if self._match(TokenType.COLON):
+            if not self._check(TokenType.RBRACKET):
+                step = self._expression()
+        self._expect(TokenType.RBRACKET)
+        return SliceExpr(lower, upper, step, line=ln)
+
     def _primary(self):
         ln = self._cur().line
         if self._match(TokenType.NUMBER): return Number(self.tokens[self.pos - 1].value, line=ln)
@@ -210,7 +273,7 @@ class Parser:
         if self._match(TokenType.FALSE): return Bool(False, line=ln)
         if self._match(TokenType.NONE): return NoneType()
         if self._match(TokenType.IDENTIFIER): return Var(self.tokens[self.pos - 1].value, line=ln)
-        
+
         # List / List Comprehension
         if self._match(TokenType.LBRACKET):
             if self._check(TokenType.RBRACKET): self._advance(); return ListExpr([], line=ln)
@@ -218,7 +281,7 @@ class Parser:
             if self._match(TokenType.FOR):
                 target = self._expect(TokenType.IDENTIFIER).value
                 self._expect(TokenType.IN)
-                iterable = self._expression()
+                iterable = self._or()
                 condition = None
                 if self._match(TokenType.IF):
                     condition = self._expression()
@@ -228,13 +291,21 @@ class Parser:
             while self._match(TokenType.COMMA):
                 elements.append(self._expression())
             self._expect(TokenType.RBRACKET); return ListExpr(elements)
-        
-        # Dict / Set
+
+        # Dict / Dict comprehension / Set
         if self._match(TokenType.LBRACE):
             if self._check(TokenType.RBRACE): self._advance(); return DictExpr([], [], line=ln)
             first = self._expression()
             if self._match(TokenType.COLON):
-                keys, values = [first], [self._expression()]
+                val = self._expression()
+                if self._match(TokenType.FOR):
+                    target = self._expect(TokenType.IDENTIFIER).value
+                    self._expect(TokenType.IN)
+                    iterable = self._or()
+                    condition = self._expression() if self._match(TokenType.IF) else None
+                    self._expect(TokenType.RBRACE)
+                    return DictComp(first, val, target, iterable, condition, line=ln)
+                keys, values = [first], [val]
                 while self._match(TokenType.COMMA):
                     keys.append(self._expression()); self._expect(TokenType.COLON); values.append(self._expression())
                 self._expect(TokenType.RBRACE); return DictExpr(keys, values, line=ln)
@@ -242,7 +313,7 @@ class Parser:
             while self._match(TokenType.COMMA):
                 elements.append(self._expression())
             self._expect(TokenType.RBRACE); return SetExpr(elements, line=ln)
-        
+
         if self._match(TokenType.LPAREN):
             first = self._expression()
             if self._match(TokenType.COMMA):
@@ -253,3 +324,4 @@ class Parser:
                 return TupleExpr(elements, line=ln)
             self._expect(TokenType.RPAREN); return first
         raise SyntaxError(f"Unexpected token {self._cur().type.name} at line {self._cur().line}")
+

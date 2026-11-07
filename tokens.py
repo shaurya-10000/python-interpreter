@@ -12,7 +12,7 @@ class TokenType(Enum):
     DEF = auto(); RETURN = auto(); PASS = auto()
     BREAK = auto(); CONTINUE = auto()
     CLASS = auto(); ASSERT = auto()
-    TRY = auto(); EXCEPT = auto(); RAISE = auto(); AS = auto()
+    TRY = auto(); EXCEPT = auto(); RAISE = auto(); AS = auto(); IS = auto(); LAMBDA = auto(); AUG_ASSIGN = auto()
 
     # Operators
     PLUS = auto(); MINUS = auto(); STAR = auto(); SLASH = auto()

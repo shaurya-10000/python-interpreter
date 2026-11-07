@@ -8,7 +8,7 @@ KEYWORDS = {
     "def": TokenType.DEF, "return": TokenType.RETURN, "pass": TokenType.PASS,
     "break": TokenType.BREAK, "continue": TokenType.CONTINUE,
     "class": TokenType.CLASS, "assert": TokenType.ASSERT, "try": TokenType.TRY, "except": TokenType.EXCEPT,
-    "raise": TokenType.RAISE, "as": TokenType.AS,
+    "raise": TokenType.RAISE, "as": TokenType.AS, "is": TokenType.IS, "lambda": TokenType.LAMBDA,
 }
 
 class Lexer:
@@ -123,7 +123,7 @@ class Lexer:
     def _operator(self):
         line, col = self.line, self.col; ch = self._advance()
         pair = ch + self._peek()
-        two_char = {'==': TokenType.EQ, '!=': TokenType.NEQ, '<=': TokenType.LTE, '>=': TokenType.GTE, '//': TokenType.DOUBLE_SLASH, '**': TokenType.DOUBLE_STAR}
+        two_char = {'==': TokenType.EQ, '!=': TokenType.NEQ, '<=': TokenType.LTE, '>=': TokenType.GTE, '//': TokenType.DOUBLE_SLASH, '**': TokenType.DOUBLE_STAR, '+=': TokenType.AUG_ASSIGN, '-=': TokenType.AUG_ASSIGN, '*=': TokenType.AUG_ASSIGN, '/=': TokenType.AUG_ASSIGN, '%=': TokenType.AUG_ASSIGN}
         if pair in two_char: self._advance(); self.tokens.append(Token(two_char[pair], pair, line, col)); return
         one_char = {'+': TokenType.PLUS, '-': TokenType.MINUS, '*': TokenType.STAR, '/': TokenType.SLASH, '%': TokenType.PERCENT, '<': TokenType.LT, '>': TokenType.GT, '=': TokenType.ASSIGN, '(': TokenType.LPAREN, ')': TokenType.RPAREN, '[': TokenType.LBRACKET, ']': TokenType.RBRACKET, '{': TokenType.LBRACE, '}': TokenType.RBRACE, ',': TokenType.COMMA, ':': TokenType.COLON, '.': TokenType.DOT}
         if ch in one_char:
