@@ -20,7 +20,7 @@ class UnaryOp: op: str; operand: Any; line: int = 0
 @dataclass
 class Assign: target: Any; value: Any; line: int = 0
 @dataclass
-class Call: callee: Any; args: List[Any]; line: int = 0
+class Call: callee: Any; args: List[Any]; line: int = 0; kwargs: Any = None
 @dataclass
 class TupleExpr: elements: List[Any]; line: int = 0
 @dataclass
@@ -75,3 +75,6 @@ class Lambda: params: List[str]; body: Any; line: int = 0
 class SliceExpr: lower: Any; upper: Any; step: Any; line: int = 0
 @dataclass
 class DictComp: key: Any; value: Any; target: str; iterable: Any; condition: Any; line: int = 0
+
+@dataclass
+class GlobalStmt: names: List[str]; line: int = 0

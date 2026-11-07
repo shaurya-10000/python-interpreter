@@ -34,10 +34,11 @@ No `ast` module. No `eval()`. Just hand-written lexing, parsing, and tree-walkin
 | **Parser** | Recursive descent with operator precedence (arithmetic, comparison, boolean logic, unary) |
 | **Control flow** | `if` / `elif` / `else`, `while`, `for`, `break`, `continue`, `pass` |
 | **Loop else** | `while...else`, `for...else` (else runs when the loop exits without `break`) |
-| **Functions** | `def`, `return`, recursion, closures, default arguments, `*args` |
+| **Functions** | `def`, `return`, recursion, closures, default arguments, keyword arguments, `*args`, `global` |
 | **Data structures** | Lists, dicts, sets, tuple literals, list comprehensions |
 | **Unpacking** | `a, b = 1, 2`, `for a, b in pairs`, nested list targets |
-| **Indexing** | `x[0]`, `d["key"]`, `x[0] = 5` |
+| **Indexing** | `x[0]`, `d["key"]`, `x[0] = 5`, slicing `x[1:3]` |
+| **Expressions** | augmented assignment (`+=`), `in` / `not in`, `is` / `is not`, ternary, `lambda`, dict comprehensions, chained comparisons |
 | **OOP** | `class`, `__init__`, `self`, inheritance, `super()` |
 | **Magic methods** | `__str__` |
 | **Exceptions** | `try`, `except as`, `raise` |
@@ -248,6 +249,7 @@ The workflow is defined in `.github/workflows/ci.yml`.
 
 - **Exception syntax is simplified.** There is no `except SomeError as e`; the language uses `except as e`, and `e` is the message string. `raise` takes a value, not an exception class.
 - **`and` / `or` return the correct operand but evaluate both sides.** There is no short-circuiting.
+- **`except Exception as e` is accepted but catches everything.** Exception classes are not matched.
 - **Only a subset of Python is implemented.** See the feature matrix.
 - **No imports, generators, or decorators** (yet).
 

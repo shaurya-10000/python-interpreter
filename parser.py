@@ -32,6 +32,12 @@ class Parser:
         if self._match(TokenType.CLASS): return self._class_def()
         if self._match(TokenType.RETURN): return self._return_statement()
         if self._match(TokenType.TRY): return self._try_statement()
+        if self._match(TokenType.GLOBAL):
+            names = [self._expect(TokenType.IDENTIFIER).value]
+            while self._match(TokenType.COMMA):
+                names.append(self._expect(TokenType.IDENTIFIER).value)
+            self._match(TokenType.NEWLINE)
+            return GlobalStmt(names, line=ln)
         if self._match(TokenType.ASSERT):
             test = self._expression()
             msg = None
@@ -235,12 +241,19 @@ class Parser:
         expr = self._primary()
         while True:
             if self._match(TokenType.LPAREN):
-                args = []
+                args = []; kwargs = {}
                 if not self._check(TokenType.RPAREN):
                     while True:
-                        args.append(self._expression())
+                        if self._check(TokenType.IDENTIFIER) and self.tokens[self.pos + 1].type == TokenType.ASSIGN:
+                            kname = self._advance().value
+                            self._advance()
+                            kwargs[kname] = self._expression()
+                        else:
+                            if kwargs:
+                                raise SyntaxError(f"Line {ln}: positional argument follows keyword argument")
+                            args.append(self._expression())
                         if not self._match(TokenType.COMMA): break
-                self._expect(TokenType.RPAREN); expr = Call(expr, args, line=ln)
+                self._expect(TokenType.RPAREN); expr = Call(expr, args, line=ln, kwargs=kwargs)
             elif self._match(TokenType.LBRACKET):
                 expr = Subscript(expr, self._subscript_index(), line=ln)
             elif self._match(TokenType.DOT):

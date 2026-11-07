@@ -149,11 +149,11 @@ class Interpreter:
                 self._eval_block(node.else_body, env)
         elif isinstance(node, FuncDef):
             evaluated_defaults = [self._eval_expr(d, env) if d is not None else None for d in node.defaults]
-            def func(*args):
-                func_env = Environment(env)
+            def func(*args, **kwargs):
+                func_env = Environment(env); _check_kwargs(node.name, node.params, kwargs)
                 if node.vararg: func_env.set(node.vararg, list(args[len(node.params):]))
                 for i, param in enumerate(node.params):
-                    if i < len(args): func_env.set(param, args[i])
+                    if i < len(args) or param in kwargs: func_env.set(param, args[i] if i < len(args) else kwargs[param])
                     elif evaluated_defaults[i] is not None: func_env.set(param, evaluated_defaults[i])
                     else: func_env.set(param, None)
                 self.call_stack.append((node.name, getattr(node, 'line', 0)))
@@ -175,6 +175,7 @@ class Interpreter:
             raise ReturnException(self._eval_expr(node.value, env) if node.value else None)
         elif isinstance(node, BreakStmt): raise BreakException()
         elif isinstance(node, ContinueStmt): raise ContinueException()
+        elif isinstance(node, GlobalStmt): env.global_names.update(node.names)
         elif isinstance(node, PassStmt): pass
         elif isinstance(node, ClassDef):
             parent = None
@@ -182,14 +183,14 @@ class Interpreter:
             methods = {}
             for method in node.methods:
                 def make_method(m, parent_cls, class_env):
-                    def method_func(*args):
-                        method_env = Environment(class_env)
+                    def method_func(*args, **kwargs):
+                        method_env = Environment(class_env); _check_kwargs(m.name, m.params, kwargs)
                         self_instance = args[0] if args else None
                         if m.params:
                             method_env.set(m.params[0], self_instance)
                             if m.vararg: method_env.set(m.vararg, list(args[1+len(m.params):]))
                             for i, param in enumerate(m.params[1:]):
-                                if i+1 < len(args): method_env.set(param, args[i+1])
+                                if i+1 < len(args) or param in kwargs: method_env.set(param, args[i+1] if i+1 < len(args) else kwargs[param])
                                 elif m.defaults[i+1] is not None: method_env.set(param, self._eval_expr(m.defaults[i+1], env))
                                 else: method_env.set(param, None)
                         if parent_cls and self_instance:
@@ -272,7 +273,7 @@ class Interpreter:
             obj = self._eval_expr(node.obj, env); name = node.name
             if isinstance(obj, UserInstanceProxy):
                 method = obj.parent_cls.get_method(name)
-                if method: return lambda *args: method(obj.instance, *args)
+                if method: return lambda *args, **kw: method(obj.instance, *args, **kw)
                 raise AttributeError(f"Parent class has no attribute '{name}'")
             if isinstance(obj, (str, list, dict)):
                 if hasattr(obj, name): return getattr(obj, name)
@@ -280,7 +281,7 @@ class Interpreter:
             if isinstance(obj, UserInstance):
                 if name in obj.attributes: return obj.attributes[name]
                 method = obj.cls.get_method(name)
-                if method: return lambda *args: method(obj, *args)
+                if method: return lambda *args, **kw: method(obj, *args, **kw)
                 raise AttributeError(f"'{obj.cls.name}' object has no attribute '{name}'")
             return getattr(obj, name)
         if isinstance(node, IfExpr):
@@ -335,12 +336,18 @@ class Interpreter:
             if node.op == "not": return not self._is_truthy(val)
         if isinstance(node, Call):
             callee = self._eval_expr(node.callee, env); args = [self._eval_expr(arg, env) for arg in node.args]
+            kwargs = {k: self._eval_expr(v, env) for k, v in (node.kwargs or {}).items()}
             if isinstance(callee, UserClass):
                 instance = UserInstance(callee)
                 init_method = callee.get_method("__init__")
-                if init_method: init_method(instance, *args)
+                if init_method: init_method(instance, *args, **kwargs)
                 return instance
             if not callable(callee): raise TypeError(f"'{type(callee).__name__}' object is not callable")
-            return callee(*args)
+            return callee(*args, **kwargs)
         raise NotImplementedError(f"Expression not implemented: {type(node).__name__}")
 
+
+def _check_kwargs(fname, params, kwargs):
+    for k in kwargs:
+        if k not in params:
+            raise TypeError(f"{fname}() got an unexpected keyword argument '{k}'")
