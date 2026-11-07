@@ -1,27 +1,30 @@
-class Animal:
-    def __init__(self, name):
-        self.name = name
-        
-    def speak(self):
-        print(self.name + " makes a sound.")
+# --- 1. String Methods ---
+name = "Hello World"
+print(name.upper())
+print(name.lower())
+print(name.split(" "))
 
-class Cat:
-    def __init__(self, name):
-        self.name = name
-        
-    def speak(self):
-        print(self.name + " says Meow!")
+# --- 2. List Methods ---
+nums = [1, 2]
+nums.append(3)
+nums.append(4)
+print(nums)
+print(nums.pop())
+print(nums)
 
-animals = [Animal("Generic"), Cat("Whiskers")]
+# --- 3. Default Arguments ---
+def greet(name="Guest"):
+    print("Hello, " + name)
 
-for a in animals:
-    a.speak()
+greet()
+greet("Alice")
 
-def fibonacci(n):
-    if n <= 1:
-        return n
-    return fibonacci(n - 1) + fibonacci(n - 2)
+# --- 4. *args (Variable Arguments) ---
+def sum_all(*nums):
+    total = 0
+    for n in nums:
+        total = total + n
+    return total
 
-print("Fibonacci sequence:")
-for i in range(10):
-    print(fibonacci(i))
+print(sum_all(1, 2, 3))
+print(sum_all(10, 20, 30, 40))

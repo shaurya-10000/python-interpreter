@@ -47,18 +47,12 @@ class Interpreter:
                 obj = self._eval_expr(node.target.obj, env)
                 if isinstance(obj, UserInstance): obj.attributes[node.target.name] = val
                 else: setattr(obj, node.target.name, val)
-
-        # Try / Except / Raise
         elif isinstance(node, TryStmt):
-            try:
-                self._eval_block(node.try_block, env)
+            try: self._eval_block(node.try_block, env)
             except Exception as e:
                 if node.except_var: env.set(node.except_var, str(e))
                 self._eval_block(node.except_block, env)
-        elif isinstance(node, RaiseStmt):
-            val = self._eval_expr(node.value, env)
-            raise Exception(val)
-
+        elif isinstance(node, RaiseStmt): raise Exception(self._eval_expr(node.value, env))
         elif isinstance(node, IfStmt):
             if self._is_truthy(self._eval_expr(node.condition, env)):
                 self._eval_block(node.then_branch, env); return
@@ -84,7 +78,12 @@ class Interpreter:
         elif isinstance(node, FuncDef):
             def func(*args):
                 func_env = Environment(env)
-                for i, param in enumerate(node.params): func_env.set(param, args[i] if i < len(args) else None)
+                # Handle *args
+                if node.vararg: func_env.set(node.vararg, list(args[len(node.params):]))
+                for i, param in enumerate(node.params):
+                    if i < len(args): func_env.set(param, args[i])
+                    elif node.defaults[i] is not None: func_env.set(param, self._eval_expr(node.defaults[i], env))
+                    else: func_env.set(param, None)
                 try: self._eval_block(node.body, func_env)
                 except ReturnException as ret: return ret.value
                 return None
@@ -102,7 +101,11 @@ class Interpreter:
                         method_env = Environment(env)
                         if m.params:
                             method_env.set(m.params[0], args[0] if args else None)
-                            for i, param in enumerate(m.params[1:]): method_env.set(param, args[i+1] if i+1 < len(args) else None)
+                            if m.vararg: method_env.set(m.vararg, list(args[1+len(m.params):]))
+                            for i, param in enumerate(m.params[1:]):
+                                if i+1 < len(args): method_env.set(param, args[i+1])
+                                elif m.defaults[i+1] is not None: method_env.set(param, self._eval_expr(m.defaults[i+1], env))
+                                else: method_env.set(param, None)
                         try: self._eval_block(m.body, method_env)
                         except ReturnException as ret: return ret.value
                         return None
@@ -125,15 +128,25 @@ class Interpreter:
         if isinstance(node, Var): return env.get(node.name)
         if isinstance(node, ListExpr): return [self._eval_expr(e, env) for e in node.elements]
         if isinstance(node, DictExpr): return {self._eval_expr(k, env): self._eval_expr(v, env) for k, v in zip(node.keys, node.values)}
-        if isinstance(node, Subscript):
-            return self._eval_expr(node.obj, env)[self._eval_expr(node.index, env)]
+        if isinstance(node, Subscript): return self._eval_expr(node.obj, env)[self._eval_expr(node.index, env)]
+        
+        # UPDATED: Added built-in methods for strings and lists
         if isinstance(node, Attribute):
             obj = self._eval_expr(node.obj, env); name = node.name
+            
+            # Native Python objects (Strings, Lists, Dicts)
+            if isinstance(obj, (str, list, dict)):
+                if hasattr(obj, name):
+                    return getattr(obj, name)
+                raise AttributeError(f"'{type(obj).__name__}' object has no attribute '{name}'")
+                
+            # Custom User Classes
             if isinstance(obj, UserInstance):
                 if name in obj.attributes: return obj.attributes[name]
                 if name in obj.cls.methods: return lambda *args: obj.cls.methods[name](obj, *args)
                 raise AttributeError(f"'{obj.cls.name}' object has no attribute '{name}'")
             return getattr(obj, name)
+            
         if isinstance(node, BinOp):
             left = self._eval_expr(node.left, env); right = self._eval_expr(node.right, env); op = node.op
             if op == "+": return left + right

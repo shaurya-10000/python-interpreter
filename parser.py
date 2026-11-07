@@ -36,7 +36,7 @@ class Parser:
         if self._match(TokenType.PASS): self._expect(TokenType.NEWLINE); return PassStmt()
         if self._match(TokenType.BREAK): self._expect(TokenType.NEWLINE); return BreakStmt()
         if self._match(TokenType.CONTINUE): self._expect(TokenType.NEWLINE); return ContinueStmt()
-
+        
         expr = self._expression()
         if self._match(TokenType.ASSIGN):
             if isinstance(expr, (Var, Subscript, Attribute)):
@@ -75,14 +75,28 @@ class Parser:
     def _for_statement(self):
         target = self._primary(); self._expect(TokenType.IN)
         return ForStmt(target, self._expression(), self._block())
+        
+    # UPDATED: Parse default args and *args
     def _func_def(self):
-        name = self._expect(TokenType.IDENTIFIER).value; self._expect(TokenType.LPAREN)
-        params = []
+        name = self._expect(TokenType.IDENTIFIER).value
+        self._expect(TokenType.LPAREN)
+        params, defaults, vararg = [], [], None
         if not self._check(TokenType.RPAREN):
             while True:
-                params.append(self._expect(TokenType.IDENTIFIER).value)
+                if self._match(TokenType.STAR):
+                    vararg = self._expect(TokenType.IDENTIFIER).value
+                else:
+                    param_name = self._expect(TokenType.IDENTIFIER).value
+                    params.append(param_name)
+                    if self._match(TokenType.ASSIGN):
+                        defaults.append(self._expression())
+                    else:
+                        defaults.append(None)
                 if not self._match(TokenType.COMMA): break
-        self._expect(TokenType.RPAREN); return FuncDef(name, params, self._block())
+        self._expect(TokenType.RPAREN)
+        body = self._block()
+        return FuncDef(name, params, defaults, vararg, body)
+
     def _class_def(self):
         name = self._expect(TokenType.IDENTIFIER).value
         self._expect(TokenType.COLON); self._expect(TokenType.NEWLINE); self._expect(TokenType.INDENT)

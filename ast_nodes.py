@@ -40,8 +40,11 @@ class IfStmt: condition: Any; then_branch: Any; elif_branches: List[Any]; else_b
 class WhileStmt: condition: Any; body: Any
 @dataclass
 class ForStmt: target: Any; iterable: Any; body: Any
+
+# UPDATED: Added default values and *args support
 @dataclass
-class FuncDef: name: str; params: List[str]; body: Any
+class FuncDef: name: str; params: List[str]; defaults: List[Any]; vararg: str; body: Any
+
 @dataclass
 class ReturnStmt: value: Any
 @dataclass
@@ -52,8 +55,6 @@ class PassStmt: pass
 class BreakStmt: pass
 @dataclass
 class ContinueStmt: pass
-
-# Exception nodes
 @dataclass
 class TryStmt: try_block: Any; except_var: str; except_block: Any
 @dataclass
