@@ -104,21 +104,14 @@ class Interpreter:
                     if isinstance(target_expr, Var): env.set(target_expr.name, item)
                     else: raise RuntimeError('Unsupported tuple assignment target')
         elif isinstance(node, TryStmt):
-            try:
-                self._eval_block(node.try_block, env)
-            except (ReturnException, BreakException, ContinueException):
-                raise
-            except Exception as e:
-                msg = str(e)
-                if " at line " in msg:
-                    msg = msg.split(" at line ", 1)[0]
-                if node.except_var: env.set(node.except_var, msg)
-                self._eval_block(node.except_block, env)
+            _exec_try(self, node, env)
         elif isinstance(node, AssertStmt):
             if not self._is_truthy(self._eval_expr(node.test, env)):
                 msg = self._eval_expr(node.msg, env) if node.msg is not None else "assertion failed"
                 raise Exception(str(msg))
-        elif isinstance(node, RaiseStmt): raise Exception(self._eval_expr(node.value, env))
+        elif isinstance(node, RaiseStmt):
+            if node.value is None: raise
+            raise Exception(self._eval_expr(node.value, env))
         elif isinstance(node, IfStmt):
             if self._is_truthy(self._eval_expr(node.condition, env)):
                 self._eval_block(node.then_branch, env); return
@@ -176,6 +169,23 @@ class Interpreter:
         elif isinstance(node, BreakStmt): raise BreakException()
         elif isinstance(node, ContinueStmt): raise ContinueException()
         elif isinstance(node, GlobalStmt): env.global_names.update(node.names)
+        elif isinstance(node, DelStmt):
+            for t in node.targets:
+                if isinstance(t, Var):
+                    if t.name not in env.vars: raise NameError(f"Name '{t.name}' is not defined")
+                    del env.vars[t.name]
+                elif isinstance(t, Subscript):
+                    del self._eval_expr(t.obj, env)[self._eval_expr(t.index, env)]
+                elif isinstance(t, Attribute):
+                    obj = self._eval_expr(t.obj, env)
+                    if isinstance(obj, UserInstance): del obj.attributes[t.name]
+                    else: delattr(obj, t.name)
+                else: raise SyntaxError("cannot delete this expression")
+        elif isinstance(node, NonlocalStmt): env.nonlocal_names.update(node.names)
+        elif isinstance(node, ChainAssign):
+            val = self._eval_expr(node.value, env)
+            for t in node.targets:
+                self._eval_statement_inner(Assign(t, Const(val), line=node.line), env)
         elif isinstance(node, PassStmt): pass
         elif isinstance(node, ClassDef):
             parent = None
@@ -202,7 +212,11 @@ class Interpreter:
                         return None
                     return method_func
                 methods[method.name] = make_method(method, parent, env)
-            env.set(node.name, UserClass(node.name, parent, methods))
+            cls_obj = UserClass(node.name, parent, methods)
+            cls_obj.attrs = {}
+            for a in (node.attrs or []):
+                cls_obj.attrs[a.target.name] = self._eval_expr(a.value, env)
+            env.set(node.name, cls_obj)
         else: raise NotImplementedError(f"Statement not implemented: {type(node).__name__}")
 
     def _eval_fstring(self, raw, env):
@@ -249,6 +263,7 @@ class Interpreter:
         return True
 
     def _eval_expr(self, node, env):
+        if isinstance(node, Const): return node.value
         if isinstance(node, Number): return node.value
         if isinstance(node, String): return node.value
         if isinstance(node, FString): return self._eval_fstring(node.value, env)
@@ -282,7 +297,15 @@ class Interpreter:
                 if name in obj.attributes: return obj.attributes[name]
                 method = obj.cls.get_method(name)
                 if method: return lambda *args, **kw: method(obj, *args, **kw)
+                _ca = _class_attr(obj.cls, name)
+                if _ca is not _MISSING: return _ca
                 raise AttributeError(f"'{obj.cls.name}' object has no attribute '{name}'")
+            if isinstance(obj, UserClass):
+                v = _class_attr(obj, name)
+                if v is not _MISSING: return v
+                m = obj.get_method(name)
+                if m: return m
+                raise AttributeError(f"type object '{obj.name}' has no attribute '{name}'")
             return getattr(obj, name)
         if isinstance(node, IfExpr):
             if self._is_truthy(self._eval_expr(node.cond, env)): return self._eval_expr(node.then, env)
@@ -351,3 +374,37 @@ def _check_kwargs(fname, params, kwargs):
     for k in kwargs:
         if k not in params:
             raise TypeError(f"{fname}() got an unexpected keyword argument '{k}'")
+
+
+_MISSING = object()
+
+def _class_attr(cls, name):
+    c = cls
+    while c is not None:
+        attrs = getattr(c, "attrs", None)
+        if attrs and name in attrs:
+            return attrs[name]
+        c = c.parent
+    return _MISSING
+
+def _exec_try(interp, node, env):
+    control = (ReturnException, BreakException, ContinueException)
+    try:
+        try:
+            interp._eval_block(node.try_block, env)
+        except control:
+            raise
+        except Exception as e:
+            if node.except_block is None:
+                raise
+            msg = str(e)
+            if " at line " in msg:
+                msg = msg.split(" at line ", 1)[0]
+            if node.except_var: env.set(node.except_var, msg)
+            interp._eval_block(node.except_block, env)
+        else:
+            if node.else_block is not None:
+                interp._eval_block(node.else_block, env)
+    finally:
+        if node.finally_block is not None:
+            interp._eval_block(node.finally_block, env)

@@ -34,14 +34,15 @@ No `ast` module. No `eval()`. Just hand-written lexing, parsing, and tree-walkin
 | **Parser** | Recursive descent with operator precedence (arithmetic, comparison, boolean logic, unary) |
 | **Control flow** | `if` / `elif` / `else`, `while`, `for`, `break`, `continue`, `pass` |
 | **Loop else** | `while...else`, `for...else` (else runs when the loop exits without `break`) |
-| **Functions** | `def`, `return`, recursion, closures, default arguments, keyword arguments, `*args`, `global` |
+| **Functions** | `def`, `return`, recursion, closures, default arguments, keyword arguments, `*args`, `global`, `nonlocal` |
 | **Data structures** | Lists, dicts, sets, tuple literals, list comprehensions |
 | **Unpacking** | `a, b = 1, 2`, `for a, b in pairs`, nested list targets |
 | **Indexing** | `x[0]`, `d["key"]`, `x[0] = 5`, slicing `x[1:3]` |
 | **Expressions** | augmented assignment (`+=`), `in` / `not in`, `is` / `is not`, ternary, `lambda`, dict comprehensions, chained comparisons |
-| **OOP** | `class`, `__init__`, `self`, inheritance, `super()` |
+| **Statements** | `del`, chained assignment (`a = b = 1`), `pass` in class bodies |
+| **OOP** | `class`, `__init__`, `self`, class attributes, inheritance, `super()` |
 | **Magic methods** | `__str__` |
-| **Exceptions** | `try`, `except as`, `raise` |
+| **Exceptions** | `try` / `except` / `else` / `finally`, `raise`, bare `raise` (re-raise) |
 | **Modern syntax** | f-strings with `{expr}` interpolation, `assert` with optional message |
 | **Builtins** | `print`, `len`, `range`, `str`, `int`, `float`, `bool`, `type`, `repr`, `input`, `enumerate`, `zip`, `sum`, `min`, `max`, `abs`, `sorted`, `reversed`, `any`, `all`, `map`, `filter` |
 | **Methods** | String and list methods delegate to the host Python objects |

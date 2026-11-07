@@ -38,6 +38,18 @@ class Parser:
                 names.append(self._expect(TokenType.IDENTIFIER).value)
             self._match(TokenType.NEWLINE)
             return GlobalStmt(names, line=ln)
+        if self._match(TokenType.NONLOCAL):
+            names = [self._expect(TokenType.IDENTIFIER).value]
+            while self._match(TokenType.COMMA):
+                names.append(self._expect(TokenType.IDENTIFIER).value)
+            self._match(TokenType.NEWLINE)
+            return NonlocalStmt(names, line=ln)
+        if self._match(TokenType.DEL):
+            targets = [self._expression()]
+            while self._match(TokenType.COMMA):
+                targets.append(self._expression())
+            self._match(TokenType.NEWLINE)
+            return DelStmt(targets, line=ln)
         if self._match(TokenType.ASSERT):
             test = self._expression()
             msg = None
@@ -46,7 +58,7 @@ class Parser:
             self._match(TokenType.NEWLINE)
             return AssertStmt(test, msg, line=ln)
         if self._match(TokenType.RAISE):
-            val = self._expression(); self._match(TokenType.NEWLINE); return RaiseStmt(val, line=ln)
+            val = None if self._check(TokenType.NEWLINE) else self._expression(); self._match(TokenType.NEWLINE); return RaiseStmt(val, line=ln)
         if self._match(TokenType.PASS): self._expect(TokenType.NEWLINE); return PassStmt()
         if self._match(TokenType.BREAK): self._expect(TokenType.NEWLINE); return BreakStmt()
         if self._match(TokenType.CONTINUE): self._expect(TokenType.NEWLINE); return ContinueStmt()
@@ -75,6 +87,16 @@ class Parser:
                     while self._match(TokenType.COMMA):
                         elems.append(self._expression())
                     value = TupleExpr(elems, line=ln)
+                if self._check(TokenType.ASSIGN):
+                    targets = [expr, value]
+                    while self._match(TokenType.ASSIGN):
+                        targets.append(self._expression())
+                    self._expect(TokenType.NEWLINE)
+                    value = targets.pop()
+                    for t in targets:
+                        if not isinstance(t, (Var, Subscript, Attribute)):
+                            raise SyntaxError(f"Line {ln}: Invalid assignment target")
+                    return ChainAssign(targets, value, line=ln)
                 self._expect(TokenType.NEWLINE); return Assign(expr, value, line=ln)
             raise SyntaxError("Invalid assignment target")
         self._match(TokenType.NEWLINE)
@@ -91,13 +113,20 @@ class Parser:
 
     def _try_statement(self):
         try_block = self._block()
-        self._expect(TokenType.EXCEPT)
-        except_var = None
-        if self._check(TokenType.IDENTIFIER):
-            self.pos += 1  # exception class name: accepted but not matched
-        if self._match(TokenType.AS): except_var = self._expect(TokenType.IDENTIFIER).value
-        except_block = self._block()
-        return TryStmt(try_block, except_var, except_block)
+        except_var = None; except_block = None; else_block = None; finally_block = None
+        if self._match(TokenType.EXCEPT):
+            if self._check(TokenType.IDENTIFIER):
+                self.pos += 1  # exception class name: accepted but not matched yet
+            if self._match(TokenType.AS):
+                except_var = self._expect(TokenType.IDENTIFIER).value
+            except_block = self._block()
+            if self._match(TokenType.ELSE):
+                else_block = self._block()
+        if self._match(TokenType.FINALLY):
+            finally_block = self._block()
+        if except_block is None and finally_block is None:
+            raise SyntaxError(f"Line {self._cur().line}: 'try' needs an 'except' or 'finally' clause")
+        return TryStmt(try_block, except_var, except_block, else_block, finally_block)
 
     def _if_statement(self):
         condition = self._expression(); then_branch = self._block()
@@ -150,16 +179,26 @@ class Parser:
         name = self._expect(TokenType.IDENTIFIER).value
         parent_class = None
         if self._match(TokenType.LPAREN):
-            parent_class = self._expect(TokenType.IDENTIFIER).value
+            if not self._check(TokenType.RPAREN):
+                parent_class = self._expect(TokenType.IDENTIFIER).value
             self._expect(TokenType.RPAREN)
         self._expect(TokenType.COLON); self._expect(TokenType.NEWLINE); self._expect(TokenType.INDENT)
-        methods = []
+        methods = []; attrs = []
         while not self._check(TokenType.DEDENT) and not self._check(TokenType.EOF):
             if self._match(TokenType.NEWLINE): continue
-            if self._match(TokenType.DEF): methods.append(self._func_def())
-            else: raise SyntaxError("Expected def inside class")
-        self._expect(TokenType.DEDENT); return ClassDef(name, parent_class, methods)
-        
+            if self._match(TokenType.DEF):
+                methods.append(self._func_def())
+            elif self._match(TokenType.PASS):
+                self._match(TokenType.NEWLINE)
+            elif self._check(TokenType.IDENTIFIER) and self.tokens[self.pos + 1].type == TokenType.ASSIGN:
+                stmt = self._statement()
+                if not isinstance(stmt, Assign):
+                    raise SyntaxError(f"Line {self._cur().line}: Only simple assignments are allowed in a class body")
+                attrs.append(stmt)
+            else:
+                raise SyntaxError(f"Line {self._cur().line}: Unsupported statement in class body")
+        self._expect(TokenType.DEDENT); return ClassDef(name, parent_class, methods, attrs)
+
     def _return_statement(self):
         ln = self._cur().line
         if self._check(TokenType.NEWLINE): self._advance(); return ReturnStmt(None, line=ln)

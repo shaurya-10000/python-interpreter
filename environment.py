@@ -3,6 +3,7 @@ class Environment:
         self.vars = {}
         self.parent = parent
         self.global_names = set()
+        self.nonlocal_names = set()
 
     def get(self, name):
         if name in self.vars:
@@ -17,5 +18,12 @@ class Environment:
             while root.parent:
                 root = root.parent
             root.vars[name] = value
+        elif name in self.nonlocal_names:
+            e = self.parent
+            while e is not None and name not in e.vars:
+                e = e.parent
+            if e is None:
+                raise NameError(f"no binding for nonlocal '{name}' found")
+            e.vars[name] = value
         else:
             self.vars[name] = value

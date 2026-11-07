@@ -53,7 +53,7 @@ class FuncDef: name: str; params: List[str]; defaults: List[Any]; vararg: str; b
 @dataclass
 class ReturnStmt: value: Any; line: int = 0
 @dataclass
-class ClassDef: name: str; parent_class: Any; methods: List[Any]
+class ClassDef: name: str; parent_class: Any; methods: List[Any]; attrs: Any = None
 @dataclass
 class PassStmt: pass
 @dataclass
@@ -61,7 +61,7 @@ class BreakStmt: pass
 @dataclass
 class ContinueStmt: pass
 @dataclass
-class TryStmt: try_block: Any; except_var: str; except_block: Any
+class TryStmt: try_block: Any; except_var: str; except_block: Any; else_block: Any = None; finally_block: Any = None
 @dataclass
 class RaiseStmt: value: Any; line: int = 0
 @dataclass
@@ -78,3 +78,12 @@ class DictComp: key: Any; value: Any; target: str; iterable: Any; condition: Any
 
 @dataclass
 class GlobalStmt: names: List[str]; line: int = 0
+
+@dataclass
+class DelStmt: targets: List[Any]; line: int = 0
+@dataclass
+class NonlocalStmt: names: List[str]; line: int = 0
+@dataclass
+class ChainAssign: targets: List[Any]; value: Any; line: int = 0
+@dataclass
+class Const: value: Any
