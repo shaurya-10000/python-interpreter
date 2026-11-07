@@ -32,19 +32,12 @@ class Parser:
         raise SyntaxError(f"Line {self._cur().line}: Expected {ttype.name} {msg}, got {self._cur().type.name}")
 
     def _statement(self):
-        # Removed the specific PRINT check. print() is now handled as a normal function call.
-        if self._match(TokenType.IF):
-            return self._if_statement()
-        if self._match(TokenType.WHILE):
-            return self._while_statement()
-        if self._match(TokenType.FOR):
-            return self._for_statement()
-        if self._match(TokenType.DEF):
-            return self._func_def()
-        if self._match(TokenType.CLASS):
-            return self._class_def()
-        if self._match(TokenType.RETURN):
-            return self._return_statement()
+        if self._match(TokenType.IF): return self._if_statement()
+        if self._match(TokenType.WHILE): return self._while_statement()
+        if self._match(TokenType.FOR): return self._for_statement()
+        if self._match(TokenType.DEF): return self._func_def()
+        if self._match(TokenType.CLASS): return self._class_def()
+        if self._match(TokenType.RETURN): return self._return_statement()
         if self._match(TokenType.PASS):
             self._expect(TokenType.NEWLINE)
             return PassStmt()
@@ -57,10 +50,10 @@ class Parser:
         
         expr = self._expression()
         if self._match(TokenType.ASSIGN):
-            if isinstance(expr, Var):
+            if isinstance(expr, (Var, Subscript, Attribute)): # Allow assignment to lists/dicts
                 value = self._expression()
                 self._expect(TokenType.NEWLINE)
-                return Assign(expr.name, value)
+                return Assign(expr, value)
             raise SyntaxError("Invalid assignment target")
         
         self._match(TokenType.NEWLINE)
@@ -96,7 +89,7 @@ class Parser:
         return WhileStmt(condition, body)
 
     def _for_statement(self):
-        target = self._expect(TokenType.IDENTIFIER).value
+        target = self._primary() # Allow unpacking like `for x in ...`
         self._expect(TokenType.IN)
         iterable = self._expression()
         body = self._block()
@@ -181,17 +174,30 @@ class Parser:
         if self._match(TokenType.DOUBLE_STAR):
             expr = BinOp(expr, "**", self._unary())
         return expr
+    
+    # --- NEW: Handle function calls, indexing, and attribute access ---
     def _call(self):
         expr = self._primary()
-        while self._match(TokenType.LPAREN):
-            args = []
-            if not self._check(TokenType.RPAREN):
-                while True:
-                    args.append(self._expression())
-                    if not self._match(TokenType.COMMA): break
-            self._expect(TokenType.RPAREN)
-            expr = Call(expr, args)
+        while True:
+            if self._match(TokenType.LPAREN):
+                args = []
+                if not self._check(TokenType.RPAREN):
+                    while True:
+                        args.append(self._expression())
+                        if not self._match(TokenType.COMMA): break
+                self._expect(TokenType.RPAREN)
+                expr = Call(expr, args)
+            elif self._match(TokenType.LBRACKET):
+                index = self._expression()
+                self._expect(TokenType.RBRACKET)
+                expr = Subscript(expr, index)
+            elif self._match(TokenType.DOT):
+                name = self._expect(TokenType.IDENTIFIER).value
+                expr = Attribute(expr, name)
+            else:
+                break
         return expr
+
     def _primary(self):
         if self._match(TokenType.NUMBER): return Number(self.tokens[self.pos - 1].value)
         if self._match(TokenType.STRING): return String(self.tokens[self.pos - 1].value)
@@ -199,6 +205,28 @@ class Parser:
         if self._match(TokenType.FALSE): return Bool(False)
         if self._match(TokenType.NONE): return NoneType()
         if self._match(TokenType.IDENTIFIER): return Var(self.tokens[self.pos - 1].value)
+        
+        # --- NEW: Lists and Dictionaries ---
+        if self._match(TokenType.LBRACKET):
+            elements = []
+            if not self._check(TokenType.RBRACKET):
+                while True:
+                    elements.append(self._expression())
+                    if not self._match(TokenType.COMMA): break
+            self._expect(TokenType.RBRACKET)
+            return ListExpr(elements)
+            
+        if self._match(TokenType.LBRACE):
+            keys, values = [], []
+            if not self._check(TokenType.RBRACE):
+                while True:
+                    keys.append(self._expression())
+                    self._expect(TokenType.COLON)
+                    values.append(self._expression())
+                    if not self._match(TokenType.COMMA): break
+            self._expect(TokenType.RBRACE)
+            return DictExpr(keys, values)
+            
         if self._match(TokenType.LPAREN):
             expr = self._expression()
             self._expect(TokenType.RPAREN)

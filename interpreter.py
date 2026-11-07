@@ -4,7 +4,6 @@ from environment import Environment
 class ReturnException(Exception):
     def __init__(self, value):
         self.value = value
-
 class BreakException(Exception): pass
 class ContinueException(Exception): pass
 
@@ -39,39 +38,43 @@ class Interpreter:
         if isinstance(node, ExprStmt):
             self._eval_expr(node.expr, env)
         elif isinstance(node, PrintStmt):
-            val = self._eval_expr(node.expr, env)
-            print(val)
+            print(self._eval_expr(node.expr, env))
         elif isinstance(node, Assign):
             val = self._eval_expr(node.value, env)
-            env.set(node.name, val)
+            if isinstance(node.target, Var):
+                env.set(node.target.name, val)
+            elif isinstance(node.target, Subscript):
+                obj = self._eval_expr(node.target.obj, env)
+                idx = self._eval_expr(node.target.index, env)
+                obj[idx] = val # Will throw TypeError if object doesn't support it (e.g., strings)
+            elif isinstance(node.target, Attribute):
+                obj = self._eval_expr(node.target.obj, env)
+                setattr(obj, node.target.name, val)
         elif isinstance(node, IfStmt):
-            # Evaluate the if condition
             if self._is_truthy(self._eval_expr(node.condition, env)):
                 self._eval_block(node.then_branch, env)
-                return # Exit after executing the 'if' branch
-                
-            # Check elif branches
+                return
             for cond, body in node.elif_branches:
                 if self._is_truthy(self._eval_expr(cond, env)):
                     self._eval_block(body, env)
-                    return # Exit after executing an 'elif' branch
-                    
-            # Execute else branch if no conditions matched
+                    return
             if node.else_branch:
                 self._eval_block(node.else_branch, env)
-                
         elif isinstance(node, WhileStmt):
             while self._is_truthy(self._eval_expr(node.condition, env)):
-                try:
-                    self._eval_block(node.body, env)
+                try: self._eval_block(node.body, env)
                 except BreakException: break
                 except ContinueException: continue
         elif isinstance(node, ForStmt):
             iterable = self._eval_expr(node.iterable, env)
             for item in iterable:
-                env.set(node.target, item)
-                try:
-                    self._eval_block(node.body, env)
+                if isinstance(node.target, Var):
+                    env.set(node.target.name, item)
+                elif isinstance(node.target, ListExpr): # Unpacking: for k, v in dict.items()
+                    for i, target_expr in enumerate(node.target.elements):
+                        if isinstance(target_expr, Var):
+                            env.set(target_expr.name, item[i])
+                try: self._eval_block(node.body, env)
                 except BreakException: break
                 except ContinueException: continue
         elif isinstance(node, FuncDef):
@@ -79,23 +82,17 @@ class Interpreter:
                 func_env = Environment(env)
                 for i, param in enumerate(node.params):
                     func_env.set(param, args[i] if i < len(args) else None)
-                try:
-                    self._eval_block(node.body, func_env)
-                except ReturnException as ret:
-                    return ret.value
+                try: self._eval_block(node.body, func_env)
+                except ReturnException as ret: return ret.value
                 return None
             env.set(node.name, func)
         elif isinstance(node, ReturnStmt):
             val = self._eval_expr(node.value, env) if node.value else None
             raise ReturnException(val)
-        elif isinstance(node, BreakStmt):
-            raise BreakException()
-        elif isinstance(node, ContinueStmt):
-            raise ContinueException()
-        elif isinstance(node, PassStmt):
-            pass
-        else:
-            raise NotImplementedError(f"Statement not implemented: {type(node).__name__}")
+        elif isinstance(node, BreakStmt): raise BreakException()
+        elif isinstance(node, ContinueStmt): raise ContinueException()
+        elif isinstance(node, PassStmt): pass
+        else: raise NotImplementedError(f"Statement not implemented: {type(node).__name__}")
 
     def _is_truthy(self, val):
         if val is None or val is False: return False
@@ -110,6 +107,19 @@ class Interpreter:
         if isinstance(node, NoneType): return None
         if isinstance(node, Var): return env.get(node.name)
         
+        # --- NEW: Lists and Dictionaries ---
+        if isinstance(node, ListExpr):
+            return [self._eval_expr(e, env) for e in node.elements]
+        if isinstance(node, DictExpr):
+            return {self._eval_expr(k, env): self._eval_expr(v, env) for k, v in zip(node.keys, node.values)}
+        if isinstance(node, Subscript):
+            obj = self._eval_expr(node.obj, env)
+            idx = self._eval_expr(node.index, env)
+            return obj[idx]
+        if isinstance(node, Attribute):
+            obj = self._eval_expr(node.obj, env)
+            return getattr(obj, node.name)
+            
         if isinstance(node, BinOp):
             left = self._eval_expr(node.left, env)
             right = self._eval_expr(node.right, env)
