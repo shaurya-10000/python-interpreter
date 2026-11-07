@@ -109,7 +109,10 @@ class Interpreter:
             except (ReturnException, BreakException, ContinueException):
                 raise
             except Exception as e:
-                if node.except_var: env.set(node.except_var, str(e))
+                msg = str(e)
+                if " at line " in msg:
+                    msg = msg.split(" at line ", 1)[0]
+                if node.except_var: env.set(node.except_var, msg)
                 self._eval_block(node.except_block, env)
         elif isinstance(node, AssertStmt):
             if not self._is_truthy(self._eval_expr(node.test, env)):

@@ -17,3 +17,8 @@ rest.py
 lex.py
 patch*.py
 fstr.py
+*_patch.py
+*_interp.py
+*_test.py
+assert_patch.py
+loop_patch.py
