@@ -43,6 +43,21 @@ class Interpreter:
         self.global_env.set("True", True)
         self.global_env.set("False", False)
         self.global_env.set("None", None)
+        self.global_env.set("input", lambda prompt="": input(prompt))
+        self.global_env.set("enumerate", lambda x: list(enumerate(x)))
+        self.global_env.set("zip", lambda *xs: list(zip(*xs)))
+        self.global_env.set("sum", lambda xs: sum(xs))
+        self.global_env.set("min", lambda *xs: min(*xs))
+        self.global_env.set("max", lambda *xs: max(*xs))
+        self.global_env.set("abs", lambda x: abs(x))
+        self.global_env.set("sorted", lambda xs: sorted(xs))
+        self.global_env.set("reversed", lambda xs: list(reversed(xs)))
+        self.global_env.set("any", lambda xs: any(xs))
+        self.global_env.set("all", lambda xs: all(xs))
+        self.global_env.set("map", lambda f, xs: list(map(f, xs)))
+        self.global_env.set("filter", lambda f, xs: list(filter(f, xs)))
+        self.global_env.set("bool", lambda x: bool(x))
+        self.global_env.set("repr", lambda x: repr(x))
 
     def run(self, ast):
         try:
