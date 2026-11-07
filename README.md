@@ -251,6 +251,7 @@ The workflow is defined in `.github/workflows/ci.yml`.
 - **`and` / `or` return the correct operand but evaluate both sides.** There is no short-circuiting.
 - **`except Exception as e` is accepted but catches everything.** Exception classes are not matched.
 - **Only a subset of Python is implemented.** See the feature matrix.
+- **Builtins do not accept keyword arguments**, so `print(x, end="")` and `sorted(x, reverse=True)` fail.
 - **No imports, generators, or decorators** (yet).
 
 ## Project structure
@@ -297,4 +298,5 @@ The workflow is defined in `.github/workflows/ci.yml`.
 ## License
 
 Released under the MIT license. See [LICENSE](./LICENSE).
+
 
