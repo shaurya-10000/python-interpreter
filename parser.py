@@ -46,9 +46,22 @@ class Parser:
         if self._match(TokenType.CONTINUE): self._expect(TokenType.NEWLINE); return ContinueStmt()
         
         expr = self._expression()
+        # Tuple assignment target: 'a, b = ...' parses as TupleExpr(left)
+        if self._match(TokenType.COMMA):
+            elements = [expr, self._expression()]
+            while self._match(TokenType.COMMA):
+                elements.append(self._expression())
+            expr = TupleExpr(elements, line=ln)
         if self._match(TokenType.ASSIGN):
-            if isinstance(expr, (Var, Subscript, Attribute)):
-                value = self._expression(); self._expect(TokenType.NEWLINE); return Assign(expr, value, line=ln)
+            if isinstance(expr, (Var, Subscript, Attribute, TupleExpr)):
+                value = self._expression()
+                # RHS tuple: 'x = 1, 2' or 'a, b = b, a'
+                if self._match(TokenType.COMMA):
+                    elems = [value, self._expression()]
+                    while self._match(TokenType.COMMA):
+                        elems.append(self._expression())
+                    value = TupleExpr(elems, line=ln)
+                self._expect(TokenType.NEWLINE); return Assign(expr, value, line=ln)
             raise SyntaxError("Invalid assignment target")
         self._match(TokenType.NEWLINE)
         return ExprStmt(expr, line=ln)
