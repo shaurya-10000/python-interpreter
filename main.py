@@ -1,6 +1,6 @@
 from lexer import Lexer
+from parser import Parser
 
-# Let's test a complex Python script with classes, functions, and indentation
 test_code = """
 class Dog:
     def __init__(self, name):
@@ -13,11 +13,17 @@ if x > 0:
     print("Positive")
     if y > 10:
         print("Big")
+
+def add(a, b):
+    return a + b
 """
 
-print("--- TOKENIZING TEST CODE ---")
+print("--- PARSING TEST CODE ---")
 lexer = Lexer(test_code)
 tokens = lexer.tokenize()
 
-for t in tokens:
-    print(t)
+parser = Parser(tokens)
+ast = parser.parse()
+
+print("Parsing Successful! AST:")
+print(ast)
