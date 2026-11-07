@@ -69,6 +69,10 @@ class Interpreter:
                 obj = self._eval_expr(node.target.obj, env)
                 if isinstance(obj, UserInstance): obj.attributes[node.target.name] = val
                 else: setattr(obj, node.target.name, val)
+            elif isinstance(node.target, TupleExpr):
+                for target_expr, item in zip(node.target.elements, val):
+                    if isinstance(target_expr, Var): env.set(target_expr.name, item)
+                    else: raise RuntimeError('Unsupported tuple assignment target')
         elif isinstance(node, TryStmt):
             try:
                 self._eval_block(node.try_block, env)
@@ -94,7 +98,7 @@ class Interpreter:
             iterable = self._eval_expr(node.iterable, env)
             for item in iterable:
                 if isinstance(node.target, Var): env.set(node.target.name, item)
-                elif isinstance(node.target, ListExpr):
+                elif isinstance(node.target, (ListExpr, TupleExpr)):
                     for i, target_expr in enumerate(node.target.elements):
                         if isinstance(target_expr, Var): env.set(target_expr.name, item[i])
                 try: self._eval_block(node.body, env)
@@ -172,6 +176,7 @@ class Interpreter:
         if isinstance(node, NoneType): return None
         if isinstance(node, Var): return env.get(node.name)
         if isinstance(node, ListExpr): return [self._eval_expr(e, env) for e in node.elements]
+        if isinstance(node, TupleExpr): return tuple(self._eval_expr(e, env) for e in node.elements)
         if isinstance(node, SetExpr): return set(self._eval_expr(e, env) for e in node.elements)
         if isinstance(node, ListComp):
             iterable = self._eval_expr(node.iterable, env)

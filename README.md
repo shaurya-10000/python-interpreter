@@ -224,7 +224,7 @@ On the included programs, output matches CPython in 15/15 cases.
 ### Known differences from CPython
 
 - Exception syntax is simplified (see above): there is no `except SomeError as e`, and `e` is the message string.
-- nd / or return the correct operand but evaluate both sides (no short-circuiting).
+- and / or return the correct operand but evaluate both sides (no short-circuiting).
 - Only a subset of Python is implemented. See the feature matrix.
 ## Testing
 
@@ -260,7 +260,6 @@ The workflow is defined in `.github/workflows/ci.yml`.
 
 ## Roadmap
 
-- [ ] Tuple literals and unpacking ((1, 2), , b = 1, 2)
 - [ ] `import` and modules
 - [ ] More magic methods: `__repr__`, `__eq__`, `__add__`, `__len__`
 - [ ] Generators (`yield`)

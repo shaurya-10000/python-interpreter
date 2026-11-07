@@ -212,5 +212,12 @@ class Parser:
             self._expect(TokenType.RBRACE); return SetExpr(elements)
         
         if self._match(TokenType.LPAREN):
-            expr = self._expression(); self._expect(TokenType.RPAREN); return expr
+            first = self._expression()
+            if self._match(TokenType.COMMA):
+                elements = [first, self._expression()]
+                while self._match(TokenType.COMMA):
+                    elements.append(self._expression())
+                self._expect(TokenType.RPAREN)
+                return TupleExpr(elements)
+            self._expect(TokenType.RPAREN); return first
         raise SyntaxError(f"Unexpected token {self._cur().type.name} at line {self._cur().line}")

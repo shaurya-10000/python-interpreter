@@ -20,6 +20,8 @@ class Assign: target: Any; value: Any
 @dataclass
 class Call: callee: Any; args: List[Any]
 @dataclass
+class TupleExpr: elements: List[Any]
+@dataclass
 class ListExpr: elements: List[Any]
 @dataclass
 class DictExpr: keys: List[Any]; values: List[Any]
