@@ -55,6 +55,17 @@ class Interpreter:
         for stmt in block.statements: self._eval_statement(stmt, env)
 
     def _eval_statement(self, node, env):
+        try:
+            self._eval_statement_inner(node, env)
+        except (ReturnException, BreakException, ContinueException):
+            raise
+        except Exception as e:
+            line = getattr(node, 'line', 0)
+            if line and ' at line ' not in str(e):
+                raise type(e)(str(e) + f' at line {line}') from None
+            raise
+
+    def _eval_statement_inner(self, node, env):
         if isinstance(node, ExprStmt): self._eval_expr(node.expr, env)
         elif isinstance(node, PrintStmt):
             val = self._eval_expr(node.expr, env)
@@ -170,19 +181,6 @@ class Interpreter:
         return True
 
     def _eval_expr(self, node, env):
-        try:
-            return self._eval_expr_inner(node, env)
-        except (ReturnException, BreakException, ContinueException):
-            raise
-        except Exception as e:
-            line = getattr(node, 'line', 0)
-            if line:
-                msg = str(e)
-                if ' at line ' not in msg:
-                    raise type(e)(msg + f' at line {line}') from None
-            raise
-
-    def _eval_expr_inner(self, node, env):
         if isinstance(node, Number): return node.value
         if isinstance(node, String): return node.value
         if isinstance(node, Bool): return node.value

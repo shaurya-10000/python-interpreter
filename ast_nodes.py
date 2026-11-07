@@ -16,7 +16,7 @@ class BinOp: left: Any; op: str; right: Any; line: int = 0
 @dataclass
 class UnaryOp: op: str; operand: Any; line: int = 0
 @dataclass
-class Assign: target: Any; value: Any
+class Assign: target: Any; value: Any; line: int = 0
 @dataclass
 class Call: callee: Any; args: List[Any]; line: int = 0
 @dataclass
@@ -35,9 +35,9 @@ class Subscript: obj: Any; index: Any; line: int = 0
 class Attribute: obj: Any; name: str; line: int = 0
 
 @dataclass
-class ExprStmt: expr: Any
+class ExprStmt: expr: Any; line: int = 0
 @dataclass
-class PrintStmt: expr: Any
+class PrintStmt: expr: Any; line: int = 0
 @dataclass
 class Block: statements: List[Any]
 @dataclass
@@ -49,7 +49,7 @@ class ForStmt: target: Any; iterable: Any; body: Any
 @dataclass
 class FuncDef: name: str; params: List[str]; defaults: List[Any]; vararg: str; body: Any
 @dataclass
-class ReturnStmt: value: Any
+class ReturnStmt: value: Any; line: int = 0
 @dataclass
 class ClassDef: name: str; parent_class: Any; methods: List[Any]
 @dataclass
@@ -61,4 +61,4 @@ class ContinueStmt: pass
 @dataclass
 class TryStmt: try_block: Any; except_var: str; except_block: Any
 @dataclass
-class RaiseStmt: value: Any
+class RaiseStmt: value: Any; line: int = 0

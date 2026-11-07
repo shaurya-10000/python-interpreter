@@ -12,11 +12,17 @@ def run_cpython(src):
         exec(compile(src, "<demo>", "exec"), {})
     return buf.getvalue()
 
+def normalize_subset(out):
+    """Strip interpreter-only annotations (e.g. ' at line 3') so output
+    is comparable to CPython's."""
+    import re
+    return re.sub(r" at line \d+", "", out)
+
 def run_subset(src):
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         Interpreter().run(Parser(Lexer(src).tokenize()).parse())
-    return buf.getvalue()
+    return normalize_subset(buf.getvalue())
 
 # Demos whose PySubset syntax differs from CPython get a translation here.
 TRANSLATED = {

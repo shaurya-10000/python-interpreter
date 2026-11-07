@@ -24,6 +24,7 @@ class Parser:
         raise SyntaxError(f"Line {self._cur().line}: Expected {ttype.name} {msg}, got {self._cur().type.name}")
 
     def _statement(self):
+        ln = self._cur().line
         if self._match(TokenType.IF): return self._if_statement()
         if self._match(TokenType.WHILE): return self._while_statement()
         if self._match(TokenType.FOR): return self._for_statement()
@@ -32,7 +33,7 @@ class Parser:
         if self._match(TokenType.RETURN): return self._return_statement()
         if self._match(TokenType.TRY): return self._try_statement()
         if self._match(TokenType.RAISE):
-            val = self._expression(); self._match(TokenType.NEWLINE); return RaiseStmt(val)
+            val = self._expression(); self._match(TokenType.NEWLINE); return RaiseStmt(val, line=ln)
         if self._match(TokenType.PASS): self._expect(TokenType.NEWLINE); return PassStmt()
         if self._match(TokenType.BREAK): self._expect(TokenType.NEWLINE); return BreakStmt()
         if self._match(TokenType.CONTINUE): self._expect(TokenType.NEWLINE); return ContinueStmt()
@@ -40,10 +41,10 @@ class Parser:
         expr = self._expression()
         if self._match(TokenType.ASSIGN):
             if isinstance(expr, (Var, Subscript, Attribute)):
-                value = self._expression(); self._expect(TokenType.NEWLINE); return Assign(expr, value)
+                value = self._expression(); self._expect(TokenType.NEWLINE); return Assign(expr, value, line=ln)
             raise SyntaxError("Invalid assignment target")
         self._match(TokenType.NEWLINE)
-        return ExprStmt(expr)
+        return ExprStmt(expr, line=ln)
 
     def _block(self):
         self._expect(TokenType.COLON); self._expect(TokenType.NEWLINE); self._expect(TokenType.INDENT)
@@ -118,8 +119,9 @@ class Parser:
         self._expect(TokenType.DEDENT); return ClassDef(name, parent_class, methods)
         
     def _return_statement(self):
-        if self._check(TokenType.NEWLINE): self._advance(); return ReturnStmt(None)
-        val = self._expression(); self._match(TokenType.NEWLINE); return ReturnStmt(val)
+        ln = self._cur().line
+        if self._check(TokenType.NEWLINE): self._advance(); return ReturnStmt(None, line=ln)
+        val = self._expression(); self._match(TokenType.NEWLINE); return ReturnStmt(val, line=ln)
 
     def _expression(self): return self._or()
     def _or(self):
