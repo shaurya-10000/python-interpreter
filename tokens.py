@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 class TokenType(Enum):
     # Literals
-    NUMBER = auto(); STRING = auto(); IDENTIFIER = auto()
+    NUMBER = auto(); STRING = auto(); FSTRING = auto(); IDENTIFIER = auto()
     # Keywords
     FALSE = auto(); TRUE = auto(); NONE = auto()
     AND = auto(); OR = auto(); NOT = auto()

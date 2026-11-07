@@ -66,7 +66,8 @@ class Interpreter:
             print("Runtime Error: 'break'/'continue' outside loop")
         except Exception as e:
             print(f"Runtime Error: {e}")
-            for fname, fline in reversed(self.call_stack):
+            tb = getattr(e, "_pysubset_tb", None) or self.call_stack
+            for fname, fline in reversed(tb):
                 print(f"  in {fname}() at line {fline}")
 
     def _eval_block(self, block, env):
@@ -147,6 +148,13 @@ class Interpreter:
                     try: self._eval_block(node.body, func_env)
                     except ReturnException as ret: return ret.value
                     return None
+                except (BreakException, ContinueException):
+                    raise
+                except Exception as e:
+                    if not hasattr(e, "_pysubset_tb"):
+                        try: e._pysubset_tb = list(self.call_stack)
+                        except Exception: pass
+                    raise
                 finally:
                     self.call_stack.pop()
             env.set(node.name, func)
