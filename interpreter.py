@@ -7,6 +7,18 @@ class ReturnException(Exception):
 class BreakException(Exception): pass
 class ContinueException(Exception): pass
 
+# --- NEW: Class representation ---
+class UserClass:
+    def __init__(self, name, methods):
+        self.name = name
+        self.methods = methods
+
+# --- NEW: Instance representation ---
+class UserInstance:
+    def __init__(self, cls):
+        self.cls = cls
+        self.attributes = {}
+
 class Interpreter:
     def __init__(self):
         self.global_env = Environment()
@@ -46,10 +58,13 @@ class Interpreter:
             elif isinstance(node.target, Subscript):
                 obj = self._eval_expr(node.target.obj, env)
                 idx = self._eval_expr(node.target.index, env)
-                obj[idx] = val # Will throw TypeError if object doesn't support it (e.g., strings)
+                obj[idx] = val
             elif isinstance(node.target, Attribute):
                 obj = self._eval_expr(node.target.obj, env)
-                setattr(obj, node.target.name, val)
+                if isinstance(obj, UserInstance):
+                    obj.attributes[node.target.name] = val
+                else:
+                    setattr(obj, node.target.name, val)
         elif isinstance(node, IfStmt):
             if self._is_truthy(self._eval_expr(node.condition, env)):
                 self._eval_block(node.then_branch, env)
@@ -70,7 +85,7 @@ class Interpreter:
             for item in iterable:
                 if isinstance(node.target, Var):
                     env.set(node.target.name, item)
-                elif isinstance(node.target, ListExpr): # Unpacking: for k, v in dict.items()
+                elif isinstance(node.target, ListExpr):
                     for i, target_expr in enumerate(node.target.elements):
                         if isinstance(target_expr, Var):
                             env.set(target_expr.name, item[i])
@@ -78,6 +93,7 @@ class Interpreter:
                 except BreakException: break
                 except ContinueException: continue
         elif isinstance(node, FuncDef):
+            # Store function as a Python callable
             def func(*args):
                 func_env = Environment(env)
                 for i, param in enumerate(node.params):
@@ -92,6 +108,28 @@ class Interpreter:
         elif isinstance(node, BreakStmt): raise BreakException()
         elif isinstance(node, ContinueStmt): raise ContinueException()
         elif isinstance(node, PassStmt): pass
+        
+        # --- NEW: Class Definition ---
+        elif isinstance(node, ClassDef):
+            methods = {}
+            for method in node.methods:
+                def make_method(m):
+                    def method_func(*args):
+                        method_env = Environment(env)
+                        if m.params:
+                            # 'self' is the first parameter, bound to the first arg (the instance)
+                            method_env.set(m.params[0], args[0] if args else None)
+                            for i, param in enumerate(m.params[1:]):
+                                method_env.set(param, args[i+1] if i+1 < len(args) else None)
+                        try:
+                            self._eval_block(m.body, method_env)
+                        except ReturnException as ret:
+                            return ret.value
+                        return None
+                    return method_func
+                methods[method.name] = make_method(method)
+            env.set(node.name, UserClass(node.name, methods))
+            
         else: raise NotImplementedError(f"Statement not implemented: {type(node).__name__}")
 
     def _is_truthy(self, val):
@@ -107,7 +145,6 @@ class Interpreter:
         if isinstance(node, NoneType): return None
         if isinstance(node, Var): return env.get(node.name)
         
-        # --- NEW: Lists and Dictionaries ---
         if isinstance(node, ListExpr):
             return [self._eval_expr(e, env) for e in node.elements]
         if isinstance(node, DictExpr):
@@ -116,9 +153,20 @@ class Interpreter:
             obj = self._eval_expr(node.obj, env)
             idx = self._eval_expr(node.index, env)
             return obj[idx]
+            
+        # --- NEW: Attribute Access (Methods and Properties) ---
         if isinstance(node, Attribute):
             obj = self._eval_expr(node.obj, env)
-            return getattr(obj, node.name)
+            name = node.name
+            if isinstance(obj, UserInstance):
+                if name in obj.attributes:
+                    return obj.attributes[name]
+                if name in obj.cls.methods:
+                    method = obj.cls.methods[name]
+                    # Bind the instance to the method
+                    return lambda *args: method(obj, *args)
+                raise AttributeError(f"'{obj.cls.name}' object has no attribute '{name}'")
+            return getattr(obj, name)
             
         if isinstance(node, BinOp):
             left = self._eval_expr(node.left, env)
@@ -147,9 +195,18 @@ class Interpreter:
             if node.op == "+": return +val
             if node.op == "not": return not self._is_truthy(val)
             
+        # --- NEW: Function/Class Calls ---
         if isinstance(node, Call):
             callee = self._eval_expr(node.callee, env)
             args = [self._eval_expr(arg, env) for arg in node.args]
+            
+            # If it's a class, instantiate it
+            if isinstance(callee, UserClass):
+                instance = UserInstance(callee)
+                if "__init__" in callee.methods:
+                    callee.methods["__init__"](instance, *args)
+                return instance
+                
             if not callable(callee):
                 raise TypeError(f"'{type(callee).__name__}' object is not callable")
             return callee(*args)

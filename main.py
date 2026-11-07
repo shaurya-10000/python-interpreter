@@ -3,21 +3,28 @@ from parser import Parser
 from interpreter import Interpreter
 
 test_code = """
-nums = [1, 2, 3, 4]
-print(nums[0])
-nums[1] = 99
-print(nums)
+class Dog:
+    def __init__(self, name, breed):
+        self.name = name
+        self.breed = breed
+        
+    def bark(self):
+        print(self.name + " says Woof!")
+        
+    def get_info(self):
+        return self.name + " is a " + self.breed
 
-person = {"name": "Alice", "age": 25}
-print(person["name"])
-person["age"] = 26
-print(person)
+my_dog = Dog("Buddy", "Golden Retriever")
+print(my_dog.name)
+my_dog.bark()
+print(my_dog.get_info())
 
-for n in nums:
-    print(n * 2)
+my_dog.name = "Max"
+print(my_dog.name)
+my_dog.bark()
 """
 
-print("--- EXECUTING DATA STRUCTURES TEST ---")
+print("--- EXECUTING OOP TEST ---")
 lexer = Lexer(test_code)
 tokens = lexer.tokenize()
 
