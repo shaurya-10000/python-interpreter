@@ -13,3 +13,6 @@ jobs:
           python-version: "3.12"
       - name: Run Interpreter Tests
         run: python main.py tests/test_basic.py
+      - name: Compare with CPython
+        run: python tests/compare_cpython.py
+

@@ -206,8 +206,8 @@ class Interpreter:
             if op == ">": return left > right
             if op == "<=": return left <= right
             if op == ">=": return left >= right
-            if op == "and": return self._is_truthy(left) and self._is_truthy(right)
-            if op == "or": return self._is_truthy(left) or self._is_truthy(right)
+            if op == "and": return right if self._is_truthy(left) else left
+            if op == "or": return left if self._is_truthy(left) else right
             raise RuntimeError(f"Unknown operator {op}")
         if isinstance(node, UnaryOp):
             val = self._eval_expr(node.operand, env)
@@ -224,3 +224,4 @@ class Interpreter:
             if not callable(callee): raise TypeError(f"'{type(callee).__name__}' object is not callable")
             return callee(*args)
         raise NotImplementedError(f"Expression not implemented: {type(node).__name__}")
+
