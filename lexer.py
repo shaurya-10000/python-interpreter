@@ -7,7 +7,7 @@ KEYWORDS = {
     "while": TokenType.WHILE, "for": TokenType.FOR, "in": TokenType.IN,
     "def": TokenType.DEF, "return": TokenType.RETURN, "pass": TokenType.PASS,
     "break": TokenType.BREAK, "continue": TokenType.CONTINUE,
-    "class": TokenType.CLASS, "try": TokenType.TRY, "except": TokenType.EXCEPT,
+    "class": TokenType.CLASS, "assert": TokenType.ASSERT, "try": TokenType.TRY, "except": TokenType.EXCEPT,
     "raise": TokenType.RAISE, "as": TokenType.AS,
 }
 

@@ -32,6 +32,13 @@ class Parser:
         if self._match(TokenType.CLASS): return self._class_def()
         if self._match(TokenType.RETURN): return self._return_statement()
         if self._match(TokenType.TRY): return self._try_statement()
+        if self._match(TokenType.ASSERT):
+            test = self._expression()
+            msg = None
+            if self._match(TokenType.COMMA):
+                msg = self._expression()
+            self._match(TokenType.NEWLINE)
+            return AssertStmt(test, msg, line=ln)
         if self._match(TokenType.RAISE):
             val = self._expression(); self._match(TokenType.NEWLINE); return RaiseStmt(val, line=ln)
         if self._match(TokenType.PASS): self._expect(TokenType.NEWLINE); return PassStmt()

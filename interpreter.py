@@ -111,6 +111,10 @@ class Interpreter:
             except Exception as e:
                 if node.except_var: env.set(node.except_var, str(e))
                 self._eval_block(node.except_block, env)
+        elif isinstance(node, AssertStmt):
+            if not self._is_truthy(self._eval_expr(node.test, env)):
+                msg = self._eval_expr(node.msg, env) if node.msg is not None else "assertion failed"
+                raise Exception(str(msg))
         elif isinstance(node, RaiseStmt): raise Exception(self._eval_expr(node.value, env))
         elif isinstance(node, IfStmt):
             if self._is_truthy(self._eval_expr(node.condition, env)):

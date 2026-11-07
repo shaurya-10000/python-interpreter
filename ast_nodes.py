@@ -64,3 +64,5 @@ class ContinueStmt: pass
 class TryStmt: try_block: Any; except_var: str; except_block: Any
 @dataclass
 class RaiseStmt: value: Any; line: int = 0
+@dataclass
+class AssertStmt: test: Any; msg: Any; line: int = 0

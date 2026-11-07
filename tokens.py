@@ -11,7 +11,7 @@ class TokenType(Enum):
     WHILE = auto(); FOR = auto(); IN = auto()
     DEF = auto(); RETURN = auto(); PASS = auto()
     BREAK = auto(); CONTINUE = auto()
-    CLASS = auto()
+    CLASS = auto(); ASSERT = auto()
     TRY = auto(); EXCEPT = auto(); RAISE = auto(); AS = auto()
 
     # Operators
