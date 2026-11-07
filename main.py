@@ -15,14 +15,34 @@ def run_source(source: str, interpreter: Interpreter):
 def main():
     interpreter = Interpreter()
     if len(sys.argv) > 1:
-        with open(sys.argv[1], "r") as f: source = f.read()
-        run_source(source, interpreter)
+        filename = sys.argv[1]
+        try:
+            with open(filename, "r") as f: source = f.read()
+            run_source(source, interpreter)
+        except FileNotFoundError: print(f"File not found: {filename}")
         return
+
+    print("PySubset Interpreter v1.2")
+    print("Type 'exit()' to quit.\n")
+    buffer = []
     while True:
         try:
-            line = input(">>> ")
-            if line.strip() in ("exit()", "quit()"): break
-            run_source(line, interpreter)
-        except (KeyboardInterrupt, EOFError): break
+            prompt = ">>> " if not buffer else "... "
+            line = input(prompt)
+            if line.strip() in ("exit()", "quit()") and not buffer: break
+            buffer.append(line)
+            
+            try:
+                source = "\n".join(buffer)
+                run_source(source, interpreter)
+                buffer = []
+            except SyntaxError:
+                if line.strip() == "" and len(buffer) > 1:
+                    print("Syntax Error: Incomplete block or invalid syntax.")
+                    buffer = []
+                else:
+                    continue
+        except (KeyboardInterrupt, EOFError):
+            print("\nGoodbye!"); break
 
 if __name__ == "__main__": main()

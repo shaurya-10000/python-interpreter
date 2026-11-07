@@ -76,7 +76,6 @@ class Parser:
         target = self._primary(); self._expect(TokenType.IN)
         return ForStmt(target, self._expression(), self._block())
         
-    # UPDATED: Parse default args and *args
     def _func_def(self):
         name = self._expect(TokenType.IDENTIFIER).value
         self._expect(TokenType.LPAREN)
@@ -97,15 +96,21 @@ class Parser:
         body = self._block()
         return FuncDef(name, params, defaults, vararg, body)
 
+    # UPDATED: Parse Inheritance
     def _class_def(self):
         name = self._expect(TokenType.IDENTIFIER).value
+        parent_class = None
+        if self._match(TokenType.LPAREN):
+            parent_class = self._expect(TokenType.IDENTIFIER).value
+            self._expect(TokenType.RPAREN)
         self._expect(TokenType.COLON); self._expect(TokenType.NEWLINE); self._expect(TokenType.INDENT)
         methods = []
         while not self._check(TokenType.DEDENT) and not self._check(TokenType.EOF):
             if self._match(TokenType.NEWLINE): continue
             if self._match(TokenType.DEF): methods.append(self._func_def())
             else: raise SyntaxError("Expected def inside class")
-        self._expect(TokenType.DEDENT); return ClassDef(name, methods)
+        self._expect(TokenType.DEDENT); return ClassDef(name, parent_class, methods)
+        
     def _return_statement(self):
         if self._check(TokenType.NEWLINE): self._advance(); return ReturnStmt(None)
         val = self._expression(); self._match(TokenType.NEWLINE); return ReturnStmt(val)

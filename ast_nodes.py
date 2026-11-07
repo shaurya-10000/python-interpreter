@@ -40,15 +40,15 @@ class IfStmt: condition: Any; then_branch: Any; elif_branches: List[Any]; else_b
 class WhileStmt: condition: Any; body: Any
 @dataclass
 class ForStmt: target: Any; iterable: Any; body: Any
-
-# UPDATED: Added default values and *args support
 @dataclass
 class FuncDef: name: str; params: List[str]; defaults: List[Any]; vararg: str; body: Any
-
 @dataclass
 class ReturnStmt: value: Any
+
+# UPDATED: Added inheritance (parent_class)
 @dataclass
-class ClassDef: name: str; methods: List[Any]
+class ClassDef: name: str; parent_class: Any; methods: List[Any]
+
 @dataclass
 class PassStmt: pass
 @dataclass
