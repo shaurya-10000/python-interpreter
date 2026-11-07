@@ -24,6 +24,10 @@ class ListExpr: elements: List[Any]
 @dataclass
 class DictExpr: keys: List[Any]; values: List[Any]
 @dataclass
+class SetExpr: elements: List[Any]
+@dataclass
+class ListComp: expr: Any; target: str; iterable: Any; condition: Any
+@dataclass
 class Subscript: obj: Any; index: Any
 @dataclass
 class Attribute: obj: Any; name: str
@@ -44,11 +48,8 @@ class ForStmt: target: Any; iterable: Any; body: Any
 class FuncDef: name: str; params: List[str]; defaults: List[Any]; vararg: str; body: Any
 @dataclass
 class ReturnStmt: value: Any
-
-# UPDATED: Added inheritance (parent_class)
 @dataclass
 class ClassDef: name: str; parent_class: Any; methods: List[Any]
-
 @dataclass
 class PassStmt: pass
 @dataclass

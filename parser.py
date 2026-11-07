@@ -58,8 +58,7 @@ class Parser:
         try_block = self._block()
         self._expect(TokenType.EXCEPT)
         except_var = None
-        if self._match(TokenType.AS):
-            except_var = self._expect(TokenType.IDENTIFIER).value
+        if self._match(TokenType.AS): except_var = self._expect(TokenType.IDENTIFIER).value
         except_block = self._block()
         return TryStmt(try_block, except_var, except_block)
 
@@ -87,16 +86,13 @@ class Parser:
                 else:
                     param_name = self._expect(TokenType.IDENTIFIER).value
                     params.append(param_name)
-                    if self._match(TokenType.ASSIGN):
-                        defaults.append(self._expression())
-                    else:
-                        defaults.append(None)
+                    if self._match(TokenType.ASSIGN): defaults.append(self._expression())
+                    else: defaults.append(None)
                 if not self._match(TokenType.COMMA): break
         self._expect(TokenType.RPAREN)
         body = self._block()
         return FuncDef(name, params, defaults, vararg, body)
 
-    # UPDATED: Parse Inheritance
     def _class_def(self):
         name = self._expect(TokenType.IDENTIFIER).value
         parent_class = None
@@ -173,20 +169,39 @@ class Parser:
         if self._match(TokenType.FALSE): return Bool(False)
         if self._match(TokenType.NONE): return NoneType()
         if self._match(TokenType.IDENTIFIER): return Var(self.tokens[self.pos - 1].value)
+        
+        # List / List Comprehension
         if self._match(TokenType.LBRACKET):
-            elements = []
-            if not self._check(TokenType.RBRACKET):
-                while True:
-                    elements.append(self._expression())
-                    if not self._match(TokenType.COMMA): break
+            if self._check(TokenType.RBRACKET): self._advance(); return ListExpr([])
+            first = self._expression()
+            if self._match(TokenType.FOR):
+                target = self._expect(TokenType.IDENTIFIER).value
+                self._expect(TokenType.IN)
+                iterable = self._expression()
+                condition = None
+                if self._match(TokenType.IF):
+                    condition = self._expression()
+                self._expect(TokenType.RBRACKET)
+                return ListComp(first, target, iterable, condition)
+            elements = [first]
+            while self._match(TokenType.COMMA):
+                elements.append(self._expression())
             self._expect(TokenType.RBRACKET); return ListExpr(elements)
+        
+        # Dict / Set
         if self._match(TokenType.LBRACE):
-            keys, values = [], []
-            if not self._check(TokenType.RBRACE):
-                while True:
+            if self._check(TokenType.RBRACE): self._advance(); return DictExpr([], [])
+            first = self._expression()
+            if self._match(TokenType.COLON):
+                keys, values = [first], [self._expression()]
+                while self._match(TokenType.COMMA):
                     keys.append(self._expression()); self._expect(TokenType.COLON); values.append(self._expression())
-                    if not self._match(TokenType.COMMA): break
-            self._expect(TokenType.RBRACE); return DictExpr(keys, values)
+                self._expect(TokenType.RBRACE); return DictExpr(keys, values)
+            elements = [first]
+            while self._match(TokenType.COMMA):
+                elements.append(self._expression())
+            self._expect(TokenType.RBRACE); return SetExpr(elements)
+        
         if self._match(TokenType.LPAREN):
             expr = self._expression(); self._expect(TokenType.RPAREN); return expr
         raise SyntaxError(f"Unexpected token {self._cur().type.name} at line {self._cur().line}")

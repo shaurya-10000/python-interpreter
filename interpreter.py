@@ -164,6 +164,16 @@ class Interpreter:
         if isinstance(node, NoneType): return None
         if isinstance(node, Var): return env.get(node.name)
         if isinstance(node, ListExpr): return [self._eval_expr(e, env) for e in node.elements]
+        if isinstance(node, SetExpr): return set(self._eval_expr(e, env) for e in node.elements)
+        if isinstance(node, ListComp):
+            iterable = self._eval_expr(node.iterable, env)
+            result = []
+            for item in iterable:
+                loop_env = Environment(env)
+                loop_env.set(node.target, item)
+                if node.condition is None or self._is_truthy(self._eval_expr(node.condition, loop_env)):
+                    result.append(self._eval_expr(node.expr, loop_env))
+            return result
         if isinstance(node, DictExpr): return {self._eval_expr(k, env): self._eval_expr(v, env) for k, v in zip(node.keys, node.values)}
         if isinstance(node, Subscript): return self._eval_expr(node.obj, env)[self._eval_expr(node.index, env)]
         if isinstance(node, Attribute):
