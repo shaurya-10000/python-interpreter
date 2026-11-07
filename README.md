@@ -260,6 +260,7 @@ The workflow is defined in `.github/workflows/ci.yml`.
 
 ## Roadmap
 
+- [ ] Tuple literals and unpacking ((1, 2), , b = 1, 2)
 - [ ] `import` and modules
 - [ ] More magic methods: `__repr__`, `__eq__`, `__add__`, `__len__`
 - [ ] Generators (`yield`)
