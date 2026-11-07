@@ -33,6 +33,9 @@ class Lexer:
                 while not self._at_end() and self._peek() != '\n': self._advance()
                 continue
             if ch.isdigit(): self._number()
+            elif ch in 'fF' and self._peek(1) in '"':
+                self._advance()
+                self._fstring()
             elif ch in '"\'':
                 self._string()
             elif ch.isalpha() or ch == '_': self._identifier()
@@ -91,6 +94,16 @@ class Lexer:
             while self._peek().isdigit(): self._advance()
         val = float(self.source[start:self.pos]) if is_float else int(self.source[start:self.pos])
         self.tokens.append(Token(TokenType.NUMBER, val, line, col))
+
+    def _fstring(self):
+        line, col = self.line, self.col
+        quote = self._advance(); start = self.pos
+        while not self._at_end() and self._peek() != quote:
+            self._advance()
+        if self._at_end():
+            raise SyntaxError('Unterminated f-string at line ' + str(line))
+        val = self.source[start:self.pos]; self._advance()
+        self.tokens.append(Token(TokenType.FSTRING, val, line, col))
 
     def _string(self):
         line, col = self.line, self.col

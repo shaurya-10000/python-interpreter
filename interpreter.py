@@ -191,6 +191,30 @@ class Interpreter:
             env.set(node.name, UserClass(node.name, parent, methods))
         else: raise NotImplementedError(f"Statement not implemented: {type(node).__name__}")
 
+    def _eval_fstring(self, raw, env):
+        from lexer import Lexer as _L
+        from parser import Parser as _P
+        result = []
+        i = 0
+        while i < len(raw):
+            if raw[i] == "{" and i + 1 < len(raw) and raw[i + 1] == "{":
+                result.append("{"); i += 2; continue
+            if raw[i] == "}" and i + 1 < len(raw) and raw[i + 1] == "}":
+                result.append("}"); i += 2; continue
+            if raw[i] == "{":
+                j = i + 1
+                while j < len(raw) and raw[j] != "}": j += 1
+                expr_text = raw[i + 1:j]
+                toks = _L(expr_text).tokenize()
+                ast = _P(toks).parse()
+                if ast.statements and hasattr(ast.statements[0], "expr"):
+                    val = self._eval_expr(ast.statements[0].expr, env)
+                    result.append(self._to_string(val))
+                i = j + 1
+                continue
+            result.append(raw[i]); i += 1
+        return "".join(result)
+
     def _to_string(self, val):
         if isinstance(val, UserInstance):
             str_method = val.cls.get_method('__str__')
@@ -213,6 +237,7 @@ class Interpreter:
     def _eval_expr(self, node, env):
         if isinstance(node, Number): return node.value
         if isinstance(node, String): return node.value
+        if isinstance(node, FString): return self._eval_fstring(node.value, env)
         if isinstance(node, Bool): return node.value
         if isinstance(node, NoneType): return None
         if isinstance(node, Var): return env.get(node.name)

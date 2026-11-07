@@ -6,6 +6,8 @@ class Number: value: Any; line: int = 0
 @dataclass
 class String: value: str; line: int = 0
 @dataclass
+class FString: value: str; line: int = 0
+@dataclass
 class Bool: value: bool; line: int = 0
 @dataclass
 class NoneType: pass

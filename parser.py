@@ -180,6 +180,7 @@ class Parser:
         ln = self._cur().line
         if self._match(TokenType.NUMBER): return Number(self.tokens[self.pos - 1].value, line=ln)
         if self._match(TokenType.STRING): return String(self.tokens[self.pos - 1].value, line=ln)
+        if self._match(TokenType.FSTRING): return FString(self.tokens[self.pos - 1].value, line=ln)
         if self._match(TokenType.TRUE): return Bool(True, line=ln)
         if self._match(TokenType.FALSE): return Bool(False, line=ln)
         if self._match(TokenType.NONE): return NoneType()
