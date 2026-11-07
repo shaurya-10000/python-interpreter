@@ -30,7 +30,7 @@ class Lexer:
             if ch in ' \t\r': self._advance(); continue
             if ch == '\n': self._handle_newline(); continue
             if ch == '#':
-                while self._peek() not in '\n\0': self._advance()
+                while not self._at_end() and self._peek() != '\n': self._advance()
                 continue
             if ch.isdigit(): self._number()
             elif ch in '"\'':
@@ -49,6 +49,9 @@ class Lexer:
     def _peek(self, offset=0):
         i = self.pos + offset
         return self.source[i] if i < len(self.source) else '\0'
+
+    def _at_end(self, offset=0):
+        return self.pos + offset >= len(self.source)
 
     def _advance(self):
         ch = self.source[self.pos]
@@ -92,7 +95,9 @@ class Lexer:
     def _string(self):
         line, col = self.line, self.col
         quote = self._advance(); start = self.pos
-        while self._peek() != quote and self._peek() != '\0': self._advance()
+        while not self._at_end() and self._peek() != quote: self._advance()
+        if self._at_end():
+            raise SyntaxError(f'Unterminated string at line {line}, col {col}')
         val = self.source[start:self.pos]; self._advance()
         self.tokens.append(Token(TokenType.STRING, val, line, col))
 
