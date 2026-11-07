@@ -170,6 +170,19 @@ class Interpreter:
         return True
 
     def _eval_expr(self, node, env):
+        try:
+            return self._eval_expr_inner(node, env)
+        except (ReturnException, BreakException, ContinueException):
+            raise
+        except Exception as e:
+            line = getattr(node, 'line', 0)
+            if line:
+                msg = str(e)
+                if ' at line ' not in msg:
+                    raise type(e)(msg + f' at line {line}') from None
+            raise
+
+    def _eval_expr_inner(self, node, env):
         if isinstance(node, Number): return node.value
         if isinstance(node, String): return node.value
         if isinstance(node, Bool): return node.value

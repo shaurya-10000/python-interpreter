@@ -2,37 +2,37 @@ from dataclasses import dataclass
 from typing import Any, List
 
 @dataclass
-class Number: value: Any
+class Number: value: Any; line: int = 0
 @dataclass
-class String: value: str
+class String: value: str; line: int = 0
 @dataclass
-class Bool: value: bool
+class Bool: value: bool; line: int = 0
 @dataclass
 class NoneType: pass
 @dataclass
-class Var: name: str
+class Var: name: str; line: int = 0
 @dataclass
-class BinOp: left: Any; op: str; right: Any
+class BinOp: left: Any; op: str; right: Any; line: int = 0
 @dataclass
-class UnaryOp: op: str; operand: Any
+class UnaryOp: op: str; operand: Any; line: int = 0
 @dataclass
 class Assign: target: Any; value: Any
 @dataclass
-class Call: callee: Any; args: List[Any]
+class Call: callee: Any; args: List[Any]; line: int = 0
 @dataclass
-class TupleExpr: elements: List[Any]
+class TupleExpr: elements: List[Any]; line: int = 0
 @dataclass
-class ListExpr: elements: List[Any]
+class ListExpr: elements: List[Any]; line: int = 0
 @dataclass
-class DictExpr: keys: List[Any]; values: List[Any]
+class DictExpr: keys: List[Any]; values: List[Any]; line: int = 0
 @dataclass
-class SetExpr: elements: List[Any]
+class SetExpr: elements: List[Any]; line: int = 0
 @dataclass
-class ListComp: expr: Any; target: str; iterable: Any; condition: Any
+class ListComp: expr: Any; target: str; iterable: Any; condition: Any; line: int = 0
 @dataclass
-class Subscript: obj: Any; index: Any
+class Subscript: obj: Any; index: Any; line: int = 0
 @dataclass
-class Attribute: obj: Any; name: str
+class Attribute: obj: Any; name: str; line: int = 0
 
 @dataclass
 class ExprStmt: expr: Any
