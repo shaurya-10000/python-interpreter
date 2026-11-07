@@ -44,7 +44,7 @@ No `ast` module. No `eval()`. Just hand-written lexing, parsing, and tree-walkin
 | **Magic methods** | `__str__` |
 | **Exceptions** | `try` / `except` / `else` / `finally`, `raise`, bare `raise` (re-raise) |
 | **Modern syntax** | f-strings with `{expr}` interpolation, `assert` with optional message |
-| **Builtins** | `print`, `len`, `range`, `str`, `int`, `float`, `bool`, `type`, `repr`, `input`, `enumerate`, `zip`, `sum`, `min`, `max`, `abs`, `sorted`, `reversed`, `any`, `all`, `map`, `filter` |
+| **Builtins** | `print`, `len`, `range`, `str`, `int`, `float`, `bool`, `type`, `repr`, `input`, `enumerate`, `zip`, `sum`, `min`, `max`, `abs`, `sorted`, `reversed`, `any`, `all`, `map`, `filter`, `list`, `dict`, `set`, `tuple`, `round`, `pow`, `divmod`, `chr`, `ord`, `format`, `isinstance`, `hasattr`, `getattr`, `setattr`, `callable`, `iter`, `next`, with keyword arguments such as `print(sep=, end=)` and `sorted(key=, reverse=)` |
 | **Methods** | String and list methods delegate to the host Python objects |
 | **Debugging** | Line-numbered runtime errors, call-stack tracebacks on exceptions |
 | **REPL** | Interactive shell with multi-line block support |
@@ -252,7 +252,6 @@ The workflow is defined in `.github/workflows/ci.yml`.
 - **`and` / `or` return the correct operand but evaluate both sides.** There is no short-circuiting.
 - **`except Exception as e` is accepted but catches everything.** Exception classes are not matched.
 - **Only a subset of Python is implemented.** See the feature matrix.
-- **Builtins do not accept keyword arguments**, so `print(x, end="")` and `sorted(x, reverse=True)` fail.
 - **No imports, generators, or decorators** (yet).
 
 ## Project structure

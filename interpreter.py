@@ -29,7 +29,7 @@ class UserInstanceProxy:
 
 class Interpreter:
     def __init__(self):
-        self.global_env = Environment(); self._setup_builtins()
+        self.global_env = Environment(); self._setup_builtins(); self._setup_builtins_v2()
         self.call_stack = []
 
     def _setup_builtins(self):
@@ -255,6 +255,121 @@ class Interpreter:
                     return f'<error: {e}>'
             return f'<{val.cls.name} instance>'
         return str(val)
+
+    def _setup_builtins_v2(self):
+        env = self.global_env
+        interp = self
+        _M = object()
+        types = {}
+
+        def reg(name, fn, pytype=None):
+            env.set(name, fn)
+            if pytype is not None:
+                types[fn] = pytype
+
+        def _print(*args, sep=" ", end="\n", file=None, flush=False):
+            sep = " " if sep is None else sep
+            end = "\n" if end is None else end
+            print(sep.join(interp._to_string(a) for a in args), end=end)
+
+        def _str(x=""): return interp._to_string(x)
+        def _int(x=0, base=None): return int(x) if base is None else int(x, base)
+        def _float(x=0.0): return float(x)
+        def _bool(x=False): return interp._is_truthy(x)
+        def _list(x=()): return list(x)
+        def _tuple(x=()): return tuple(x)
+        def _set(x=()): return set(x)
+        def _dict(*a, **kw): return dict(*a, **kw)
+
+        reg("print", _print)
+        reg("str", _str, str)
+        reg("int", _int, int)
+        reg("float", _float, float)
+        reg("bool", _bool, bool)
+        reg("list", _list, list)
+        reg("tuple", _tuple, tuple)
+        reg("set", _set, set)
+        reg("dict", _dict, dict)
+
+        def _isinstance(obj, cls):
+            if isinstance(cls, tuple):
+                return any(_isinstance(obj, c) for c in cls)
+            if isinstance(cls, UserClass):
+                if not isinstance(obj, UserInstance):
+                    return False
+                c = obj.cls
+                while c is not None:
+                    if c is cls:
+                        return True
+                    c = c.parent
+                return False
+            t = types.get(cls)
+            if t is None:
+                raise TypeError("isinstance() arg 2 must be a class or a tuple of classes")
+            if isinstance(obj, UserInstance):
+                return False
+            return isinstance(obj, t)
+        reg("isinstance", _isinstance)
+
+        def _sorted(xs, key=None, reverse=False): return sorted(xs, key=key, reverse=reverse)
+        def _reversed(xs): return list(reversed(xs))
+        def _pick(fn, args, key, default):
+            items = list(args[0]) if len(args) == 1 else list(args)
+            if not items:
+                if default is _M:
+                    raise ValueError("min()/max() arg is an empty sequence")
+                return default
+            return fn(items, key=key)
+        def _min(*args, key=None, default=_M): return _pick(min, args, key, default)
+        def _max(*args, key=None, default=_M): return _pick(max, args, key, default)
+        def _sum(xs, start=0): return sum(xs, start)
+        def _enumerate(xs, start=0): return list(enumerate(xs, start))
+        def _zip(*xs): return list(zip(*xs))
+        def _map(f, *xs): return list(map(f, *xs))
+        def _filter(f, xs): return list(filter(f, xs))
+        reg("sorted", _sorted); reg("reversed", _reversed)
+        reg("min", _min); reg("max", _max); reg("sum", _sum)
+        reg("enumerate", _enumerate); reg("zip", _zip)
+        reg("map", _map); reg("filter", _filter)
+
+        def _round(x, n=None): return round(x) if n is None else round(x, n)
+        def _pow(a, b, m=None): return pow(a, b) if m is None else pow(a, b, m)
+        reg("round", _round); reg("pow", _pow)
+        reg("divmod", lambda a, b: divmod(a, b))
+        reg("chr", lambda n: chr(n)); reg("ord", lambda c: ord(c))
+        reg("format", lambda v, spec="": format(v, spec))
+        reg("hash", lambda x: hash(x)); reg("id", lambda x: id(x))
+        reg("callable", lambda x: callable(x) or isinstance(x, UserClass))
+        reg("iter", lambda x: iter(x))
+
+        def _next(it, default=_M):
+            try:
+                return next(it)
+            except StopIteration:
+                if default is _M:
+                    raise
+                return default
+        reg("next", _next)
+
+        def _getattr(obj, name, default=_M):
+            try:
+                return interp._eval_expr(Attribute(Const(obj), name), interp.global_env)
+            except AttributeError:
+                if default is _M:
+                    raise
+                return default
+        def _hasattr(obj, name):
+            try:
+                interp._eval_expr(Attribute(Const(obj), name), interp.global_env)
+                return True
+            except AttributeError:
+                return False
+        def _setattr(obj, name, v):
+            if isinstance(obj, UserInstance):
+                obj.attributes[name] = v
+            else:
+                setattr(obj, name, v)
+        reg("getattr", _getattr); reg("hasattr", _hasattr); reg("setattr", _setattr)
 
     def _is_truthy(self, val):
         if val is None or val is False: return False
