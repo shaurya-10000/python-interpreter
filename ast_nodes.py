@@ -61,7 +61,7 @@ class BreakStmt: pass
 @dataclass
 class ContinueStmt: pass
 @dataclass
-class TryStmt: try_block: Any; except_var: str; except_block: Any; else_block: Any = None; finally_block: Any = None
+class TryStmt: try_block: Any; except_var: str; except_block: Any; else_block: Any = None; finally_block: Any = None; handlers: Any = None
 @dataclass
 class RaiseStmt: value: Any; line: int = 0
 @dataclass

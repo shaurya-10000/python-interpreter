@@ -38,11 +38,11 @@ No `ast` module. No `eval()`. Just hand-written lexing, parsing, and tree-walkin
 | **Data structures** | Lists, dicts, sets, tuple literals, list comprehensions |
 | **Unpacking** | `a, b = 1, 2`, `for a, b in pairs`, nested list targets |
 | **Indexing** | `x[0]`, `d["key"]`, `x[0] = 5`, slicing `x[1:3]` |
-| **Expressions** | augmented assignment (`+=`), `in` / `not in`, `is` / `is not`, ternary, `lambda`, dict comprehensions, chained comparisons |
+| **Expressions** | augmented assignment (`+=`), `in` / `not in`, `is` / `is not`, ternary, `lambda`, dict comprehensions, chained comparisons, short-circuit `and` / `or` |
 | **Statements** | `del`, chained assignment (`a = b = 1`), `pass` in class bodies |
 | **OOP** | `class`, `__init__`, `self`, class attributes, inheritance, `super()` |
 | **Magic methods** | `__str__` |
-| **Exceptions** | `try` / `except` / `else` / `finally`, `raise`, bare `raise` (re-raise) |
+| **Exceptions** | `try` / `except` / `else` / `finally`, typed `except ValueError as e`, `except (A, B)`, multiple `except` clauses, `raise ValueError(...)`, custom exception classes, bare `raise`, built-in exception hierarchy |
 | **Modern syntax** | f-strings with `{expr}` interpolation, `assert` with optional message |
 | **Builtins** | `print`, `len`, `range`, `str`, `int`, `float`, `bool`, `type`, `repr`, `input`, `enumerate`, `zip`, `sum`, `min`, `max`, `abs`, `sorted`, `reversed`, `any`, `all`, `map`, `filter`, `list`, `dict`, `set`, `tuple`, `round`, `pow`, `divmod`, `chr`, `ord`, `format`, `isinstance`, `hasattr`, `getattr`, `setattr`, `callable`, `iter`, `next`, with keyword arguments such as `print(sep=, end=)` and `sorted(key=, reverse=)` |
 | **Methods** | String and list methods delegate to the host Python objects |
@@ -172,7 +172,7 @@ Multi-line blocks use `...` continuation prompts:
 
 ### Exceptions and assert
 
-This language uses its own exception syntax: `raise` takes a value, and `except as e` binds the message.
+Exceptions are real classes. Standard `try` / `except ValueError as e` and `raise ValueError(...)` work, and you can define your own with `class MyError(Exception)`. A shorthand also works: `raise("msg")` with a plain value and a bare `except as e`, which binds the message string.
 
     try:
         raise("Something broke!")
@@ -248,9 +248,7 @@ The workflow is defined in `.github/workflows/ci.yml`.
 
 ### Known differences from CPython
 
-- **Exception syntax is simplified.** There is no `except SomeError as e`; the language uses `except as e`, and `e` is the message string. `raise` takes a value, not an exception class.
-- **`and` / `or` return the correct operand but evaluate both sides.** There is no short-circuiting.
-- **`except Exception as e` is accepted but catches everything.** Exception classes are not matched.
+- **Shorthand exceptions.** `raise("msg")` with a plain value and a bare `except as e` still work and bind `e` to the message string. Built-in runtime errors (such as division by zero) are mapped to the matching exception class by name.
 - **Only a subset of Python is implemented.** See the feature matrix.
 - **No imports, generators, or decorators** (yet).
 
@@ -290,8 +288,6 @@ The workflow is defined in `.github/workflows/ci.yml`.
 - [ ] More magic methods: `__repr__`, `__eq__`, `__add__`, `__len__`, `__getitem__`
 - [ ] Generators (`yield`)
 - [ ] Decorators
-- [ ] Short-circuit evaluation for `and` / `or`
-- [ ] `try / except SomeError as e` (typed exceptions)
 - [ ] Column-level error positions and source-snippet rendering
 - [ ] Single-element tuple literal `(x,)`
 

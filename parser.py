@@ -113,20 +113,24 @@ class Parser:
 
     def _try_statement(self):
         try_block = self._block()
-        except_var = None; except_block = None; else_block = None; finally_block = None
-        if self._match(TokenType.EXCEPT):
-            if self._check(TokenType.IDENTIFIER):
-                self.pos += 1  # exception class name: accepted but not matched yet
+        handlers = []; else_block = None; finally_block = None
+        while self._check(TokenType.EXCEPT):
+            self.pos += 1
+            type_expr = None; var = None
+            if not self._check(TokenType.AS) and not self._check(TokenType.COLON):
+                type_expr = self._expression()
             if self._match(TokenType.AS):
-                except_var = self._expect(TokenType.IDENTIFIER).value
-            except_block = self._block()
-            if self._match(TokenType.ELSE):
-                else_block = self._block()
+                var = self._expect(TokenType.IDENTIFIER).value
+            handlers.append((type_expr, var, self._block()))
+        if handlers and self._match(TokenType.ELSE):
+            else_block = self._block()
         if self._match(TokenType.FINALLY):
             finally_block = self._block()
-        if except_block is None and finally_block is None:
+        if not handlers and finally_block is None:
             raise SyntaxError(f"Line {self._cur().line}: 'try' needs an 'except' or 'finally' clause")
-        return TryStmt(try_block, except_var, except_block, else_block, finally_block)
+        first_var = handlers[0][1] if handlers else None
+        first_block = handlers[0][2] if handlers else None
+        return TryStmt(try_block, first_var, first_block, else_block, finally_block, handlers)
 
     def _if_statement(self):
         condition = self._expression(); then_branch = self._block()

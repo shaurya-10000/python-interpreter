@@ -29,7 +29,7 @@ class UserInstanceProxy:
 
 class Interpreter:
     def __init__(self):
-        self.global_env = Environment(); self._setup_builtins(); self._setup_builtins_v2()
+        self.global_env = Environment(); self._setup_builtins(); self._setup_builtins_v2(); self._setup_exceptions()
         self.call_stack = []
 
     def _setup_builtins(self):
@@ -80,6 +80,9 @@ class Interpreter:
             raise
         except Exception as e:
             line = getattr(node, 'line', 0)
+            if isinstance(e, PyRaise):
+                if line and not e.line: e.line = line
+                raise
             if line and ' at line ' not in str(e):
                 raise type(e)(str(e) + f' at line {line}') from None
             raise
@@ -108,10 +111,10 @@ class Interpreter:
         elif isinstance(node, AssertStmt):
             if not self._is_truthy(self._eval_expr(node.test, env)):
                 msg = self._eval_expr(node.msg, env) if node.msg is not None else "assertion failed"
-                raise Exception(str(msg))
+                raise AssertionError(str(msg))
         elif isinstance(node, RaiseStmt):
             if node.value is None: raise
-            raise Exception(self._eval_expr(node.value, env))
+            raise _make_raise(self, self._eval_expr(node.value, env))
         elif isinstance(node, IfStmt):
             if self._is_truthy(self._eval_expr(node.condition, env)):
                 self._eval_block(node.then_branch, env); return
@@ -371,6 +374,33 @@ class Interpreter:
                 setattr(obj, name, v)
         reg("getattr", _getattr); reg("hasattr", _hasattr); reg("setattr", _setattr)
 
+    def _setup_exceptions(self):
+        def exc_init(this, *args):
+            this.attributes["args"] = tuple(args)
+            if len(args) == 1: this.attributes["message"] = str(args[0])
+            elif args: this.attributes["message"] = str(tuple(args))
+            else: this.attributes["message"] = ""
+        def exc_str(this, *a):
+            return str(this.attributes.get("message", ""))
+        base = UserClass("Exception", None, {"__init__": exc_init, "__str__": exc_str})
+        base.attrs = {}
+        classes = {"Exception": base}
+        tree = [
+            ("ArithmeticError", "Exception"), ("ZeroDivisionError", "ArithmeticError"), ("OverflowError", "ArithmeticError"),
+            ("LookupError", "Exception"), ("KeyError", "LookupError"), ("IndexError", "LookupError"),
+            ("ValueError", "Exception"), ("TypeError", "Exception"), ("NameError", "Exception"),
+            ("AttributeError", "Exception"), ("RuntimeError", "Exception"),
+            ("NotImplementedError", "RuntimeError"), ("RecursionError", "RuntimeError"),
+            ("AssertionError", "Exception"), ("StopIteration", "Exception"),
+        ]
+        for name, parent in tree:
+            c = UserClass(name, classes[parent], {})
+            c.attrs = {}
+            classes[name] = c
+        self.exception_classes = classes
+        for name, c in classes.items():
+            self.global_env.set(name, c)
+
     def _is_truthy(self, val):
         if val is None or val is False: return False
         if isinstance(val, (int, float)) and val == 0: return False
@@ -446,6 +476,12 @@ class Interpreter:
                     result[self._eval_expr(node.key, loop_env)] = self._eval_expr(node.value, loop_env)
             return result
         if isinstance(node, BinOp):
+            if node.op == "and":
+                l_val = self._eval_expr(node.left, env)
+                return self._eval_expr(node.right, env) if self._is_truthy(l_val) else l_val
+            if node.op == "or":
+                l_val = self._eval_expr(node.left, env)
+                return l_val if self._is_truthy(l_val) else self._eval_expr(node.right, env)
             left = self._eval_expr(node.left, env); right = self._eval_expr(node.right, env); op = node.op
             if op == "+": return left + right
             if op == "-": return left - right
@@ -502,21 +538,119 @@ def _class_attr(cls, name):
         c = c.parent
     return _MISSING
 
+
+class PyRaise(Exception):
+    def __init__(self, inst=None, legacy=None):
+        super().__init__()
+        self.inst = inst
+        self.legacy = legacy
+        self.line = 0
+
+    def message(self):
+        if self.inst is not None:
+            return str(self.inst.attributes.get("message", ""))
+        return str(self.legacy)
+
+    def __str__(self):
+        if self.inst is not None:
+            m = self.message()
+            text = (self.inst.cls.name + ": " + m) if m else self.inst.cls.name
+        else:
+            text = self.message()
+        return text + (" at line " + str(self.line) if self.line else "")
+
+
+def _new_instance(cls, *args):
+    inst = UserInstance(cls)
+    init = cls.get_method("__init__")
+    if init:
+        init(inst, *args)
+    return inst
+
+def _is_exc_instance(interp, inst):
+    base = interp.exception_classes["Exception"]
+    c = inst.cls
+    while c is not None:
+        if c is base:
+            return True
+        c = c.parent
+    return False
+
+def _make_raise(interp, val):
+    if isinstance(val, UserClass):
+        val = _new_instance(val)
+    if isinstance(val, UserInstance):
+        if not _is_exc_instance(interp, val):
+            return TypeError("exceptions must derive from Exception")
+        return PyRaise(inst=val)
+    return PyRaise(legacy=val)
+
+def _strip_line(msg):
+    return msg.split(" at line ", 1)[0] if " at line " in msg else msg
+
+def _to_exc_instance(interp, e):
+    """Return (instance, legacy_text_or_None, is_host_error)."""
+    classes = interp.exception_classes
+    if isinstance(e, PyRaise):
+        if e.inst is not None:
+            return e.inst, None, False
+        return _new_instance(classes["Exception"], e.message()), e.message(), False
+    cls = classes["Exception"]
+    for t in type(e).__mro__:
+        c = classes.get(t.__name__)
+        if c is not None:
+            cls = c
+            break
+    if isinstance(e, KeyError) and e.args:
+        a = e.args[0]
+        msg = _strip_line(a) if isinstance(a, str) and " at line " in a else repr(a)
+    else:
+        msg = _strip_line(str(e))
+    return _new_instance(cls, msg), None, True
+
+def _exc_match(inst, spec):
+    if isinstance(spec, tuple):
+        return any(_exc_match(inst, s) for s in spec)
+    if isinstance(spec, UserClass):
+        c = inst.cls
+        while c is not None:
+            if c is spec:
+                return True
+            c = c.parent
+        return False
+    raise TypeError("except clause needs an exception class or a tuple of them")
+
 def _exec_try(interp, node, env):
     control = (ReturnException, BreakException, ContinueException)
+    handlers = node.handlers
+    if handlers is None and node.except_block is not None:
+        handlers = [(None, node.except_var, node.except_block)]
+    handlers = handlers or []
     try:
         try:
             interp._eval_block(node.try_block, env)
         except control:
             raise
         except Exception as e:
-            if node.except_block is None:
+            if not handlers:
                 raise
-            msg = str(e)
-            if " at line " in msg:
-                msg = msg.split(" at line ", 1)[0]
-            if node.except_var: env.set(node.except_var, msg)
-            interp._eval_block(node.except_block, env)
+            inst, legacy, host = _to_exc_instance(interp, e)
+            for type_expr, var, block in handlers:
+                if type_expr is not None:
+                    if not _exc_match(inst, interp._eval_expr(type_expr, env)):
+                        continue
+                if var:
+                    if legacy is not None:
+                        val = legacy
+                    elif host and type_expr is None:
+                        val = _strip_line(str(e))
+                    else:
+                        val = inst
+                    env.set(var, val)
+                interp._eval_block(block, env)
+                break
+            else:
+                raise
         else:
             if node.else_block is not None:
                 interp._eval_block(node.else_block, env)
