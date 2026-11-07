@@ -78,10 +78,15 @@ class Parser:
         else_branch = self._block() if self._match(TokenType.ELSE) else None
         return IfStmt(condition, then_branch, elif_branches, else_branch)
 
-    def _while_statement(self): return WhileStmt(self._expression(), self._block())
+    def _while_statement(self):
+        cond = self._expression(); body = self._block()
+        else_body = self._block() if self._match(TokenType.ELSE) else None
+        return WhileStmt(cond, body, else_body)
     def _for_statement(self):
         target = self._for_target(); self._expect(TokenType.IN)
-        return ForStmt(target, self._expression(), self._block())
+        it = self._expression(); body = self._block()
+        else_body = self._block() if self._match(TokenType.ELSE) else None
+        return ForStmt(target, it, body, else_body)
 
     def _for_target(self):
         ln = self._cur().line

@@ -124,20 +124,26 @@ class Interpreter:
                     self._eval_block(body, env); return
             if node.else_branch: self._eval_block(node.else_branch, env)
         elif isinstance(node, WhileStmt):
+            broke = False
             while self._is_truthy(self._eval_expr(node.condition, env)):
                 try: self._eval_block(node.body, env)
-                except BreakException: break
+                except BreakException: broke = True; break
                 except ContinueException: continue
+            if not broke and node.else_body is not None:
+                self._eval_block(node.else_body, env)
         elif isinstance(node, ForStmt):
             iterable = self._eval_expr(node.iterable, env)
+            broke = False
             for item in iterable:
                 if isinstance(node.target, Var): env.set(node.target.name, item)
                 elif isinstance(node.target, (ListExpr, TupleExpr)):
                     for i, target_expr in enumerate(node.target.elements):
                         if isinstance(target_expr, Var): env.set(target_expr.name, item[i])
                 try: self._eval_block(node.body, env)
-                except BreakException: break
+                except BreakException: broke = True; break
                 except ContinueException: continue
+            if not broke and node.else_body is not None:
+                self._eval_block(node.else_body, env)
         elif isinstance(node, FuncDef):
             evaluated_defaults = [self._eval_expr(d, env) if d is not None else None for d in node.defaults]
             def func(*args):

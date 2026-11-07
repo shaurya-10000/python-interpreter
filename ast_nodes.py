@@ -45,9 +45,9 @@ class Block: statements: List[Any]
 @dataclass
 class IfStmt: condition: Any; then_branch: Any; elif_branches: List[Any]; else_branch: Any
 @dataclass
-class WhileStmt: condition: Any; body: Any
+class WhileStmt: condition: Any; body: Any; else_body: Any = None
 @dataclass
-class ForStmt: target: Any; iterable: Any; body: Any
+class ForStmt: target: Any; iterable: Any; body: Any; else_body: Any = None
 @dataclass
 class FuncDef: name: str; params: List[str]; defaults: List[Any]; vararg: str; body: Any; line: int = 0
 @dataclass
