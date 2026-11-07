@@ -1,29 +1,32 @@
 from lexer import Lexer
 from parser import Parser
+from interpreter import Interpreter
 
 test_code = """
-class Dog:
-    def __init__(self, name):
-        self.name = name
+def greet(name):
+    print("Hello, " + name + "!")
 
-x = 5
-y = 10.5
+greet("World")
 
-if x > 0:
-    print("Positive")
-    if y > 10:
-        print("Big")
+x = 10
+while x > 0:
+    if x == 5:
+        print("Halfway there!")
+    print(x)
+    x = x - 2
 
-def add(a, b):
-    return a + b
+for i in range(3):
+    print("Loop iteration: " + str(i))
+
+print("Done!")
 """
 
-print("--- PARSING TEST CODE ---")
+print("--- EXECUTING SCRIPT ---")
 lexer = Lexer(test_code)
 tokens = lexer.tokenize()
 
 parser = Parser(tokens)
 ast = parser.parse()
 
-print("Parsing Successful! AST:")
-print(ast)
+interpreter = Interpreter()
+interpreter.run(ast)
