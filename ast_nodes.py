@@ -47,7 +47,7 @@ class WhileStmt: condition: Any; body: Any
 @dataclass
 class ForStmt: target: Any; iterable: Any; body: Any
 @dataclass
-class FuncDef: name: str; params: List[str]; defaults: List[Any]; vararg: str; body: Any
+class FuncDef: name: str; params: List[str]; defaults: List[Any]; vararg: str; body: Any; line: int = 0
 @dataclass
 class ReturnStmt: value: Any; line: int = 0
 @dataclass

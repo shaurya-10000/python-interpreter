@@ -30,6 +30,7 @@ class UserInstanceProxy:
 class Interpreter:
     def __init__(self):
         self.global_env = Environment(); self._setup_builtins()
+        self.call_stack = []
 
     def _setup_builtins(self):
         self.global_env.set("print", lambda *args: print(*[self._to_string(a) for a in args]))
@@ -50,6 +51,8 @@ class Interpreter:
             print("Runtime Error: 'break'/'continue' outside loop")
         except Exception as e:
             print(f"Runtime Error: {e}")
+            for fname, fline in reversed(self.call_stack):
+                print(f"  in {fname}() at line {fline}")
 
     def _eval_block(self, block, env):
         for stmt in block.statements: self._eval_statement(stmt, env)
@@ -124,9 +127,13 @@ class Interpreter:
                     if i < len(args): func_env.set(param, args[i])
                     elif evaluated_defaults[i] is not None: func_env.set(param, evaluated_defaults[i])
                     else: func_env.set(param, None)
-                try: self._eval_block(node.body, func_env)
-                except ReturnException as ret: return ret.value
-                return None
+                self.call_stack.append((node.name, getattr(node, 'line', 0)))
+                try:
+                    try: self._eval_block(node.body, func_env)
+                    except ReturnException as ret: return ret.value
+                    return None
+                finally:
+                    self.call_stack.pop()
             env.set(node.name, func)
         elif isinstance(node, ReturnStmt):
             raise ReturnException(self._eval_expr(node.value, env) if node.value else None)

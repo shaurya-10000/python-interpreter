@@ -87,6 +87,7 @@ class Parser:
         return first
         
     def _func_def(self):
+        ln = self._cur().line
         name = self._expect(TokenType.IDENTIFIER).value
         self._expect(TokenType.LPAREN)
         params, defaults, vararg = [], [], None
@@ -102,7 +103,7 @@ class Parser:
                 if not self._match(TokenType.COMMA): break
         self._expect(TokenType.RPAREN)
         body = self._block()
-        return FuncDef(name, params, defaults, vararg, body)
+        return FuncDef(name, params, defaults, vararg, body, line=ln)
 
     def _class_def(self):
         name = self._expect(TokenType.IDENTIFIER).value
