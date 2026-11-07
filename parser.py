@@ -32,8 +32,7 @@ class Parser:
         raise SyntaxError(f"Line {self._cur().line}: Expected {ttype.name} {msg}, got {self._cur().type.name}")
 
     def _statement(self):
-        if self._match(TokenType.PRINT):
-            return self._print_statement()
+        # Removed the specific PRINT check. print() is now handled as a normal function call.
         if self._match(TokenType.IF):
             return self._if_statement()
         if self._match(TokenType.WHILE):
@@ -77,13 +76,6 @@ class Parser:
             statements.append(self._statement())
         self._expect(TokenType.DEDENT)
         return Block(statements)
-
-    def _print_statement(self):
-        self._expect(TokenType.LPAREN)
-        expr = self._expression()
-        self._expect(TokenType.RPAREN)
-        self._match(TokenType.NEWLINE)
-        return PrintStmt(expr)
 
     def _if_statement(self):
         condition = self._expression()
