@@ -44,8 +44,12 @@ class Interpreter:
         self.global_env.set("None", None)
 
     def run(self, ast):
-        try: self._eval_block(ast, self.global_env)
-        except Exception as e: print(f"Runtime Error: {e}")
+        try:
+            self._eval_block(ast, self.global_env)
+        except (BreakException, ContinueException):
+            print("Runtime Error: 'break'/'continue' outside loop")
+        except Exception as e:
+            print(f"Runtime Error: {e}")
 
     def _eval_block(self, block, env):
         for stmt in block.statements: self._eval_statement(stmt, env)
@@ -66,7 +70,10 @@ class Interpreter:
                 if isinstance(obj, UserInstance): obj.attributes[node.target.name] = val
                 else: setattr(obj, node.target.name, val)
         elif isinstance(node, TryStmt):
-            try: self._eval_block(node.try_block, env)
+            try:
+                self._eval_block(node.try_block, env)
+            except (ReturnException, BreakException, ContinueException):
+                raise
             except Exception as e:
                 if node.except_var: env.set(node.except_var, str(e))
                 self._eval_block(node.except_block, env)
@@ -94,12 +101,13 @@ class Interpreter:
                 except BreakException: break
                 except ContinueException: continue
         elif isinstance(node, FuncDef):
+            evaluated_defaults = [self._eval_expr(d, env) if d is not None else None for d in node.defaults]
             def func(*args):
                 func_env = Environment(env)
                 if node.vararg: func_env.set(node.vararg, list(args[len(node.params):]))
                 for i, param in enumerate(node.params):
                     if i < len(args): func_env.set(param, args[i])
-                    elif node.defaults[i] is not None: func_env.set(param, self._eval_expr(node.defaults[i], env))
+                    elif evaluated_defaults[i] is not None: func_env.set(param, evaluated_defaults[i])
                     else: func_env.set(param, None)
                 try: self._eval_block(node.body, func_env)
                 except ReturnException as ret: return ret.value
@@ -115,9 +123,9 @@ class Interpreter:
             if node.parent_class: parent = env.get(node.parent_class)
             methods = {}
             for method in node.methods:
-                def make_method(m, parent_cls):
+                def make_method(m, parent_cls, class_env):
                     def method_func(*args):
-                        method_env = Environment(env)
+                        method_env = Environment(class_env)
                         self_instance = args[0] if args else None
                         if m.params:
                             method_env.set(m.params[0], self_instance)
@@ -134,7 +142,7 @@ class Interpreter:
                         except ReturnException as ret: return ret.value
                         return None
                     return method_func
-                methods[method.name] = make_method(method, parent)
+                methods[method.name] = make_method(method, parent, env)
             env.set(node.name, UserClass(node.name, parent, methods))
         else: raise NotImplementedError(f"Statement not implemented: {type(node).__name__}")
 

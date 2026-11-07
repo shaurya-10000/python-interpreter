@@ -72,8 +72,17 @@ class Parser:
 
     def _while_statement(self): return WhileStmt(self._expression(), self._block())
     def _for_statement(self):
-        target = self._primary(); self._expect(TokenType.IN)
+        target = self._for_target(); self._expect(TokenType.IN)
         return ForStmt(target, self._expression(), self._block())
+
+    def _for_target(self):
+        first = self._primary()
+        if self._match(TokenType.COMMA):
+            elements = [first, self._primary()]
+            while self._match(TokenType.COMMA):
+                elements.append(self._primary())
+            return ListExpr(elements)
+        return first
         
     def _func_def(self):
         name = self._expect(TokenType.IDENTIFIER).value
