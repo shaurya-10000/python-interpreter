@@ -102,10 +102,8 @@ class Interpreter:
                 obj = self._eval_expr(node.target.obj, env)
                 if isinstance(obj, UserInstance): obj.attributes[node.target.name] = val
                 else: setattr(obj, node.target.name, val)
-            elif isinstance(node.target, TupleExpr):
-                for target_expr, item in zip(node.target.elements, val):
-                    if isinstance(target_expr, Var): env.set(target_expr.name, item)
-                    else: raise RuntimeError('Unsupported tuple assignment target')
+            elif isinstance(node.target, (TupleExpr, ListExpr)):
+                _assign_to(self, node.target, val, env)
         elif isinstance(node, TryStmt):
             _exec_try(self, node, env)
         elif isinstance(node, AssertStmt):
@@ -146,7 +144,8 @@ class Interpreter:
         elif isinstance(node, FuncDef):
             evaluated_defaults = [self._eval_expr(d, env) if d is not None else None for d in node.defaults]
             def func(*args, **kwargs):
-                func_env = Environment(env); _check_kwargs(node.name, node.params, kwargs)
+                func_env = Environment(env); _check_kwargs(node.name, node.params, kwargs, node.kwarg)
+                if node.kwarg: func_env.set(node.kwarg, {k: v for k, v in kwargs.items() if k not in node.params})
                 if node.vararg: func_env.set(node.vararg, list(args[len(node.params):]))
                 for i, param in enumerate(node.params):
                     if i < len(args) or param in kwargs: func_env.set(param, args[i] if i < len(args) else kwargs[param])
@@ -197,7 +196,8 @@ class Interpreter:
             for method in node.methods:
                 def make_method(m, parent_cls, class_env):
                     def method_func(*args, **kwargs):
-                        method_env = Environment(class_env); _check_kwargs(m.name, m.params, kwargs)
+                        method_env = Environment(class_env); _check_kwargs(m.name, m.params, kwargs, getattr(m, 'kwarg', None))
+                        if getattr(m, 'kwarg', None): method_env.set(m.kwarg, {k: v for k, v in kwargs.items() if k not in m.params})
                         self_instance = args[0] if args else None
                         if m.params:
                             method_env.set(m.params[0], self_instance)
@@ -411,13 +411,13 @@ class Interpreter:
         if isinstance(node, Const): return node.value
         if isinstance(node, Number): return node.value
         if isinstance(node, String): return node.value
-        if isinstance(node, FString): return self._eval_fstring(node.value, env)
+        if isinstance(node, FString): return _eval_fstring2(self, node.value, env)
         if isinstance(node, Bool): return node.value
         if isinstance(node, NoneType): return None
         if isinstance(node, Var): return env.get(node.name)
-        if isinstance(node, ListExpr): return [self._eval_expr(e, env) for e in node.elements]
-        if isinstance(node, TupleExpr): return tuple(self._eval_expr(e, env) for e in node.elements)
-        if isinstance(node, SetExpr): return set(self._eval_expr(e, env) for e in node.elements)
+        if isinstance(node, ListExpr): return _eval_elems(self, node.elements, env)
+        if isinstance(node, TupleExpr): return tuple(_eval_elems(self, node.elements, env))
+        if isinstance(node, SetExpr): return set(_eval_elems(self, node.elements, env))
         if isinstance(node, ListComp):
             iterable = self._eval_expr(node.iterable, env)
             result = []
@@ -427,7 +427,7 @@ class Interpreter:
                 if node.condition is None or self._is_truthy(self._eval_expr(node.condition, loop_env)):
                     result.append(self._eval_expr(node.expr, loop_env))
             return result
-        if isinstance(node, DictExpr): return {self._eval_expr(k, env): self._eval_expr(v, env) for k, v in zip(node.keys, node.values)}
+        if isinstance(node, DictExpr): return _eval_dict(self, node, env)
         if isinstance(node, Subscript): return self._eval_expr(node.obj, env)[self._eval_expr(node.index, env)]
         if isinstance(node, Attribute):
             obj = self._eval_expr(node.obj, env); name = node.name
@@ -452,6 +452,8 @@ class Interpreter:
                 if m: return m
                 raise AttributeError(f"type object '{obj.name}' has no attribute '{name}'")
             return getattr(obj, name)
+        if isinstance(node, Comp): return _eval_comp(self, node, env)
+        if isinstance(node, Starred): raise SyntaxError("can't use starred expression here")
         if isinstance(node, IfExpr):
             if self._is_truthy(self._eval_expr(node.cond, env)): return self._eval_expr(node.then, env)
             return self._eval_expr(node.other, env)
@@ -461,10 +463,13 @@ class Interpreter:
             st = self._eval_expr(node.step, env) if node.step is not None else None
             return slice(lo, up, st)
         if isinstance(node, Lambda):
-            def lam(*args):
+            lam_defaults = [self._eval_expr(d, env) if d is not None else None for d in (node.defaults or [None] * len(node.params))]
+            def lam(*args, **kw):
                 lam_env = Environment(env)
                 for i, p in enumerate(node.params):
-                    lam_env.set(p, args[i] if i < len(args) else None)
+                    if i < len(args): lam_env.set(p, args[i])
+                    elif p in kw: lam_env.set(p, kw[p])
+                    else: lam_env.set(p, lam_defaults[i])
                 return self._eval_expr(node.body, lam_env)
             return lam
         if isinstance(node, DictComp):
@@ -500,6 +505,11 @@ class Interpreter:
             if op == "not in": return left not in right
             if op == "is": return left is right
             if op == "is not": return left is not right
+            if op == "&": return left & right
+            if op == "|": return left | right
+            if op == "^": return left ^ right
+            if op == "<<": return left << right
+            if op == ">>": return left >> right
             if op == "and": return right if self._is_truthy(left) else left
             if op == "or": return left if self._is_truthy(left) else right
             raise RuntimeError(f"Unknown operator {op}")
@@ -507,10 +517,13 @@ class Interpreter:
             val = self._eval_expr(node.operand, env)
             if node.op == "-": return -val
             if node.op == "+": return +val
+            if node.op == "~": return ~val
             if node.op == "not": return not self._is_truthy(val)
         if isinstance(node, Call):
-            callee = self._eval_expr(node.callee, env); args = [self._eval_expr(arg, env) for arg in node.args]
+            callee = self._eval_expr(node.callee, env); args = _eval_elems(self, node.args, env)
             kwargs = {k: self._eval_expr(v, env) for k, v in (node.kwargs or {}).items()}
+            for _sp in (node.kw_splats or []):
+                kwargs.update(self._eval_expr(_sp, env))
             if isinstance(callee, UserClass):
                 instance = UserInstance(callee)
                 init_method = callee.get_method("__init__")
@@ -521,9 +534,9 @@ class Interpreter:
         raise NotImplementedError(f"Expression not implemented: {type(node).__name__}")
 
 
-def _check_kwargs(fname, params, kwargs):
+def _check_kwargs(fname, params, kwargs, kwarg=None):
     for k in kwargs:
-        if k not in params:
+        if k not in params and not kwarg:
             raise TypeError(f"{fname}() got an unexpected keyword argument '{k}'")
 
 
@@ -657,3 +670,165 @@ def _exec_try(interp, node, env):
     finally:
         if node.finally_block is not None:
             interp._eval_block(node.finally_block, env)
+
+
+def _eval_elems(interp, elements, env):
+    out = []
+    for e in elements:
+        if isinstance(e, Starred):
+            out.extend(interp._eval_expr(e.value, env))
+        else:
+            out.append(interp._eval_expr(e, env))
+    return out
+
+
+def _eval_dict(interp, node, env):
+    result = {}
+    for k, v in zip(node.keys, node.values):
+        if k is None:
+            result.update(interp._eval_expr(v, env))
+        else:
+            key = interp._eval_expr(k, env)
+            result[key] = interp._eval_expr(v, env)
+    return result
+
+
+def _assign_to(interp, target, value, env):
+    if isinstance(target, Var):
+        env.set(target.name, value)
+    elif isinstance(target, Subscript):
+        obj = interp._eval_expr(target.obj, env)
+        obj[interp._eval_expr(target.index, env)] = value
+    elif isinstance(target, Attribute):
+        obj = interp._eval_expr(target.obj, env)
+        if isinstance(obj, UserInstance): obj.attributes[target.name] = value
+        else: setattr(obj, target.name, value)
+    elif isinstance(target, (TupleExpr, ListExpr)):
+        items = list(value)
+        elems = target.elements
+        star = [i for i, t in enumerate(elems) if isinstance(t, Starred)]
+        if len(star) > 1:
+            raise SyntaxError("multiple starred expressions in assignment")
+        if not star:
+            if len(items) < len(elems):
+                raise ValueError(f"not enough values to unpack (expected {len(elems)}, got {len(items)})")
+            if len(items) > len(elems):
+                raise ValueError(f"too many values to unpack (expected {len(elems)})")
+            for t, v in zip(elems, items):
+                _assign_to(interp, t, v, env)
+        else:
+            k = star[0]
+            after = len(elems) - k - 1
+            if len(items) < len(elems) - 1:
+                raise ValueError(f"not enough values to unpack (expected at least {len(elems) - 1}, got {len(items)})")
+            for t, v in zip(elems[:k], items[:k]):
+                _assign_to(interp, t, v, env)
+            _assign_to(interp, elems[k].value, items[k:len(items) - after], env)
+            for t, v in zip(elems[k + 1:], items[len(items) - after:]):
+                _assign_to(interp, t, v, env)
+    else:
+        raise SyntaxError("cannot assign to this expression")
+
+
+def _eval_comp(interp, node, env):
+    items = []
+    pairs = {}
+    clauses = node.clauses
+    def emit(scope):
+        if node.kind == "dict":
+            key = interp._eval_expr(node.elt, scope)
+            pairs[key] = interp._eval_expr(node.elt2, scope)
+        else:
+            items.append(interp._eval_expr(node.elt, scope))
+    def walk(i, scope):
+        if i == len(clauses):
+            emit(scope)
+            return
+        clause = clauses[i]
+        if clause[0] == "for":
+            for item in interp._eval_expr(clause[2], scope):
+                inner = Environment(scope)
+                _assign_to(interp, clause[1], item, inner)
+                walk(i + 1, inner)
+        elif interp._is_truthy(interp._eval_expr(clause[1], scope)):
+            walk(i + 1, scope)
+    walk(0, Environment(env))
+    if node.kind == "dict": return pairs
+    if node.kind == "set": return set(items)
+    if node.kind == "gen": return iter(items)
+    return items
+
+
+def _eval_fstring2(interp, raw, env):
+    from lexer import Lexer as _L, _unescape
+    from parser import Parser as _P
+    out = []
+    lit = []
+    i = 0
+    n = len(raw)
+    while i < n:
+        c = raw[i]
+        if c == "{":
+            if i + 1 < n and raw[i + 1] == "{":
+                lit.append("{"); i += 2; continue
+            j = i + 1; depth = 0; quote = None
+            while j < n:
+                ch = raw[j]
+                if quote:
+                    if ch == quote: quote = None
+                elif ch in "'\"": quote = ch
+                elif ch in "([{": depth += 1
+                elif ch in ")]}":
+                    if depth == 0 and ch == "}": break
+                    depth -= 1
+                j += 1
+            if j >= n:
+                raise SyntaxError("f-string: expecting '}'")
+            inner = raw[i + 1:j]
+            expr_text = inner
+            spec = ""
+            d = 0; q = None
+            for k, ch in enumerate(inner):
+                if q:
+                    if ch == q: q = None
+                elif ch in "'\"": q = ch
+                elif ch in "([{": d += 1
+                elif ch in ")]}": d -= 1
+                elif d == 0 and ch == ":":
+                    expr_text = inner[:k]
+                    spec = inner[k + 1:]
+                    break
+            conv = None
+            if len(expr_text) >= 2 and expr_text[-2] == "!" and expr_text[-1] in "rsa":
+                conv = expr_text[-1]
+                expr_text = expr_text[:-2]
+            tree = _P(_L(expr_text).tokenize()).parse()
+            if not tree.statements or not hasattr(tree.statements[0], "expr"):
+                raise SyntaxError("f-string: invalid expression")
+            val = interp._eval_expr(tree.statements[0].expr, env)
+            if "{" in spec:
+                spec = _eval_fstring2(interp, spec, env)
+            if conv == "r": val = repr(val)
+            elif conv == "s": val = interp._to_string(val)
+            elif conv == "a": val = ascii(val)
+            if spec:
+                if isinstance(val, UserInstance):
+                    val = interp._to_string(val)
+                piece = format(val, spec)
+            else:
+                piece = interp._to_string(val)
+            if lit:
+                out.append(_unescape("".join(lit)))
+                lit = []
+            out.append(piece)
+            i = j + 1
+            continue
+        if c == "}":
+            if i + 1 < n and raw[i + 1] == "}":
+                lit.append("}"); i += 2; continue
+            raise SyntaxError("f-string: single '}' is not allowed")
+        lit.append(c)
+        i += 1
+    if lit:
+        out.append(_unescape("".join(lit)))
+    return "".join(out)

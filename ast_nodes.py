@@ -20,7 +20,7 @@ class UnaryOp: op: str; operand: Any; line: int = 0
 @dataclass
 class Assign: target: Any; value: Any; line: int = 0
 @dataclass
-class Call: callee: Any; args: List[Any]; line: int = 0; kwargs: Any = None
+class Call: callee: Any; args: List[Any]; line: int = 0; kwargs: Any = None; kw_splats: Any = None
 @dataclass
 class TupleExpr: elements: List[Any]; line: int = 0
 @dataclass
@@ -49,7 +49,7 @@ class WhileStmt: condition: Any; body: Any; else_body: Any = None
 @dataclass
 class ForStmt: target: Any; iterable: Any; body: Any; else_body: Any = None
 @dataclass
-class FuncDef: name: str; params: List[str]; defaults: List[Any]; vararg: str; body: Any; line: int = 0
+class FuncDef: name: str; params: List[str]; defaults: List[Any]; vararg: str; body: Any; line: int = 0; kwarg: Any = None
 @dataclass
 class ReturnStmt: value: Any; line: int = 0
 @dataclass
@@ -70,7 +70,7 @@ class AssertStmt: test: Any; msg: Any; line: int = 0
 @dataclass
 class IfExpr: cond: Any; then: Any; other: Any; line: int = 0
 @dataclass
-class Lambda: params: List[str]; body: Any; line: int = 0
+class Lambda: params: List[str]; body: Any; line: int = 0; defaults: Any = None
 @dataclass
 class SliceExpr: lower: Any; upper: Any; step: Any; line: int = 0
 @dataclass
@@ -87,3 +87,8 @@ class NonlocalStmt: names: List[str]; line: int = 0
 class ChainAssign: targets: List[Any]; value: Any; line: int = 0
 @dataclass
 class Const: value: Any
+
+@dataclass
+class Starred: value: Any; line: int = 0
+@dataclass
+class Comp: kind: str; elt: Any; elt2: Any; clauses: Any; line: int = 0

@@ -11,6 +11,36 @@ KEYWORDS = {
     "raise": TokenType.RAISE, "as": TokenType.AS, "del": TokenType.DEL, "nonlocal": TokenType.NONLOCAL, "finally": TokenType.FINALLY, "global": TokenType.GLOBAL, "is": TokenType.IS, "lambda": TokenType.LAMBDA,
 }
 
+_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", "'": "'", '"': '"', "0": "\0", "a": "\a", "b": "\b", "f": "\f", "v": "\v"}
+
+
+def _unescape(s):
+    if "\\" not in s:
+        return s
+    out = []
+    i = 0
+    n = len(s)
+    while i < n:
+        c = s[i]
+        if c == "\\" and i + 1 < n:
+            nxt = s[i + 1]
+            if nxt in _ESCAPES:
+                out.append(_ESCAPES[nxt]); i += 2; continue
+            if nxt == "\n":
+                i += 2; continue
+            if nxt in "xuU":
+                width = {"x": 2, "u": 4, "U": 8}[nxt]
+                digits = s[i + 2:i + 2 + width]
+                try:
+                    if len(digits) == width:
+                        out.append(chr(int(digits, 16))); i += 2 + width; continue
+                except ValueError:
+                    pass
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 class Lexer:
     def __init__(self, source: str):
         self.source = source
@@ -33,7 +63,7 @@ class Lexer:
                 while not self._at_end() and self._peek() != '\n': self._advance()
                 continue
             if ch.isdigit(): self._number()
-            elif ch in 'fF' and self._peek(1) in '"':
+            elif ch in 'fF' and self._peek(1) in ('"', "'"):
                 self._advance()
                 self._fstring()
             elif ch in '"\'':
@@ -97,22 +127,59 @@ class Lexer:
 
     def _fstring(self):
         line, col = self.line, self.col
-        quote = self._advance(); start = self.pos
-        while not self._at_end() and self._peek() != quote:
-            self._advance()
-        if self._at_end():
-            raise SyntaxError('Unterminated f-string at line ' + str(line))
-        val = self.source[start:self.pos]; self._advance()
-        self.tokens.append(Token(TokenType.FSTRING, val, line, col))
+        quote = self._advance()
+        triple = (self._peek() == quote and self._peek(1) == quote)
+        if triple:
+            self._advance(); self._advance()
+        buf = []
+        while True:
+            if self._at_end():
+                raise SyntaxError('Unterminated f-string at line ' + str(line))
+            ch = self._peek()
+            if triple:
+                if ch == quote and self._peek(1) == quote and self._peek(2) == quote:
+                    self._advance(); self._advance(); self._advance()
+                    break
+            elif ch == quote:
+                self._advance()
+                break
+            elif ch == '\n':
+                raise SyntaxError('Unterminated f-string at line ' + str(line))
+            if ch == '\\':
+                buf.append(self._advance())
+                if not self._at_end():
+                    buf.append(self._advance())
+                continue
+            buf.append(self._advance())
+        self.tokens.append(Token(TokenType.FSTRING, ''.join(buf), line, col))
 
     def _string(self):
         line, col = self.line, self.col
-        quote = self._advance(); start = self.pos
-        while not self._at_end() and self._peek() != quote: self._advance()
-        if self._at_end():
-            raise SyntaxError(f'Unterminated string at line {line}, col {col}')
-        val = self.source[start:self.pos]; self._advance()
-        self.tokens.append(Token(TokenType.STRING, val, line, col))
+        quote = self._advance()
+        triple = (self._peek() == quote and self._peek(1) == quote)
+        if triple:
+            self._advance(); self._advance()
+        buf = []
+        while True:
+            if self._at_end():
+                raise SyntaxError(f'Unterminated string at line {line}, col {col}')
+            ch = self._peek()
+            if triple:
+                if ch == quote and self._peek(1) == quote and self._peek(2) == quote:
+                    self._advance(); self._advance(); self._advance()
+                    break
+            elif ch == quote:
+                self._advance()
+                break
+            elif ch == '\n':
+                raise SyntaxError(f'Unterminated string at line {line}, col {col}')
+            if ch == '\\':
+                buf.append(self._advance())
+                if not self._at_end():
+                    buf.append(self._advance())
+                continue
+            buf.append(self._advance())
+        self.tokens.append(Token(TokenType.STRING, _unescape(''.join(buf)), line, col))
 
     def _identifier(self):
         line, col = self.line, self.col; start = self.pos
@@ -123,9 +190,9 @@ class Lexer:
     def _operator(self):
         line, col = self.line, self.col; ch = self._advance()
         pair = ch + self._peek()
-        two_char = {'==': TokenType.EQ, '!=': TokenType.NEQ, '<=': TokenType.LTE, '>=': TokenType.GTE, '//': TokenType.DOUBLE_SLASH, '**': TokenType.DOUBLE_STAR, '+=': TokenType.AUG_ASSIGN, '-=': TokenType.AUG_ASSIGN, '*=': TokenType.AUG_ASSIGN, '/=': TokenType.AUG_ASSIGN, '%=': TokenType.AUG_ASSIGN}
+        two_char = {'==': TokenType.EQ, '!=': TokenType.NEQ, '<=': TokenType.LTE, '>=': TokenType.GTE, '//': TokenType.DOUBLE_SLASH, '**': TokenType.DOUBLE_STAR, '+=': TokenType.AUG_ASSIGN, '-=': TokenType.AUG_ASSIGN, '*=': TokenType.AUG_ASSIGN, '/=': TokenType.AUG_ASSIGN, '%=': TokenType.AUG_ASSIGN, '<<': TokenType.LSHIFT, '>>': TokenType.RSHIFT, '&=': TokenType.AUG_ASSIGN, '|=': TokenType.AUG_ASSIGN, '^=': TokenType.AUG_ASSIGN}
         if pair in two_char: self._advance(); self.tokens.append(Token(two_char[pair], pair, line, col)); return
-        one_char = {'+': TokenType.PLUS, '-': TokenType.MINUS, '*': TokenType.STAR, '/': TokenType.SLASH, '%': TokenType.PERCENT, '<': TokenType.LT, '>': TokenType.GT, '=': TokenType.ASSIGN, '(': TokenType.LPAREN, ')': TokenType.RPAREN, '[': TokenType.LBRACKET, ']': TokenType.RBRACKET, '{': TokenType.LBRACE, '}': TokenType.RBRACE, ',': TokenType.COMMA, ':': TokenType.COLON, '.': TokenType.DOT}
+        one_char = {'+': TokenType.PLUS, '-': TokenType.MINUS, '*': TokenType.STAR, '/': TokenType.SLASH, '%': TokenType.PERCENT, '<': TokenType.LT, '>': TokenType.GT, '=': TokenType.ASSIGN, '(': TokenType.LPAREN, ')': TokenType.RPAREN, '[': TokenType.LBRACKET, ']': TokenType.RBRACKET, '{': TokenType.LBRACE, '}': TokenType.RBRACE, ',': TokenType.COMMA, ':': TokenType.COLON, '.': TokenType.DOT, '&': TokenType.AMP, '|': TokenType.PIPE, '^': TokenType.CARET, '~': TokenType.TILDE}
         if ch in one_char:
             if ch in '([{': self.paren_depth += 1
             elif ch in ')]}': self.paren_depth -= 1

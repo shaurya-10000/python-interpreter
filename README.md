@@ -30,20 +30,20 @@ No `ast` module. No `eval()`. Just hand-written lexing, parsing, and tree-walkin
 
 | Category | Supported |
 | :--- | :--- |
-| **Lexer** | Indentation (INDENT/DEDENT), comments, single- and double-quoted strings, f-string literals, multi-character operators |
+| **Lexer** | Indentation (INDENT/DEDENT), comments, single-, double- and triple-quoted strings, escape sequences, f-string literals, multi-character operators |
 | **Parser** | Recursive descent with operator precedence (arithmetic, comparison, boolean logic, unary) |
 | **Control flow** | `if` / `elif` / `else`, `while`, `for`, `break`, `continue`, `pass` |
 | **Loop else** | `while...else`, `for...else` (else runs when the loop exits without `break`) |
-| **Functions** | `def`, `return`, recursion, closures, default arguments, keyword arguments, `*args`, `global`, `nonlocal` |
-| **Data structures** | Lists, dicts, sets, tuple literals, list comprehensions |
-| **Unpacking** | `a, b = 1, 2`, `for a, b in pairs`, nested list targets |
+| **Functions** | `def`, `return`, recursion, closures, default arguments, keyword arguments, `*args`, `**kwargs`, `*` / `**` unpacking in calls, lambda defaults, `global`, `nonlocal` |
+| **Data structures** | Lists, dicts, sets, tuples (including `(1,)`), list / dict / set comprehensions with several `for` and `if` clauses and tuple targets, generator expressions (evaluated eagerly) |
+| **Unpacking** | `a, b = 1, 2`, `a, *rest = xs`, nested targets, `for a, b in pairs`, `[*a, *b]`, `{**a, **b}` |
 | **Indexing** | `x[0]`, `d["key"]`, `x[0] = 5`, slicing `x[1:3]` |
-| **Expressions** | augmented assignment (`+=`), `in` / `not in`, `is` / `is not`, ternary, `lambda`, dict comprehensions, chained comparisons, short-circuit `and` / `or` |
+| **Expressions** | augmented assignment (`+=`), `in` / `not in`, `is` / `is not`, ternary, `lambda`, dict comprehensions, chained comparisons, short-circuit `and` / `or`, bitwise operators (`& | ^ ~ << >>`), set operators |
 | **Statements** | `del`, chained assignment (`a = b = 1`), `pass` in class bodies |
 | **OOP** | `class`, `__init__`, `self`, class attributes, inheritance, `super()` |
 | **Magic methods** | `__str__` |
 | **Exceptions** | `try` / `except` / `else` / `finally`, typed `except ValueError as e`, `except (A, B)`, multiple `except` clauses, `raise ValueError(...)`, custom exception classes, bare `raise`, built-in exception hierarchy |
-| **Modern syntax** | f-strings with `{expr}` interpolation, `assert` with optional message |
+| **Modern syntax** | f-strings with `{expr}`, format specs (`{x:.2f}`, `{n:,}`), nested specs, `!r` / `!s`; `assert` with optional message |
 | **Builtins** | `print`, `len`, `range`, `str`, `int`, `float`, `bool`, `type`, `repr`, `input`, `enumerate`, `zip`, `sum`, `min`, `max`, `abs`, `sorted`, `reversed`, `any`, `all`, `map`, `filter`, `list`, `dict`, `set`, `tuple`, `round`, `pow`, `divmod`, `chr`, `ord`, `format`, `isinstance`, `hasattr`, `getattr`, `setattr`, `callable`, `iter`, `next`, with keyword arguments such as `print(sep=, end=)` and `sorted(key=, reverse=)` |
 | **Methods** | String and list methods delegate to the host Python objects |
 | **Debugging** | Line-numbered runtime errors, call-stack tracebacks on exceptions |
@@ -249,6 +249,7 @@ The workflow is defined in `.github/workflows/ci.yml`.
 ### Known differences from CPython
 
 - **Shorthand exceptions.** `raise("msg")` with a plain value and a bare `except as e` still work and bind `e` to the message string. Built-in runtime errors (such as division by zero) are mapped to the matching exception class by name.
+- **Generator expressions are evaluated eagerly** (they behave like a one-shot iterator over a precomputed list).
 - **Only a subset of Python is implemented.** See the feature matrix.
 - **No imports, generators, or decorators** (yet).
 
@@ -289,7 +290,6 @@ The workflow is defined in `.github/workflows/ci.yml`.
 - [ ] Generators (`yield`)
 - [ ] Decorators
 - [ ] Column-level error positions and source-snippet rendering
-- [ ] Single-element tuple literal `(x,)`
 
 ## License
 
