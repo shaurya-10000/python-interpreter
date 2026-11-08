@@ -63,6 +63,9 @@ class Lexer:
                 while not self._at_end() and self._peek() != '\n': self._advance()
                 continue
             if ch.isdigit(): self._number()
+            elif ch in 'rR' and self._peek(1) in ('"', "'"):
+                self._advance()
+                self._string(raw=True)
             elif ch in 'fF' and self._peek(1) in ('"', "'"):
                 self._advance()
                 self._fstring()
@@ -153,7 +156,7 @@ class Lexer:
             buf.append(self._advance())
         self.tokens.append(Token(TokenType.FSTRING, ''.join(buf), line, col))
 
-    def _string(self):
+    def _string(self, raw=False):
         line, col = self.line, self.col
         quote = self._advance()
         triple = (self._peek() == quote and self._peek(1) == quote)
@@ -179,7 +182,8 @@ class Lexer:
                     buf.append(self._advance())
                 continue
             buf.append(self._advance())
-        self.tokens.append(Token(TokenType.STRING, _unescape(''.join(buf)), line, col))
+        text = ''.join(buf)
+        self.tokens.append(Token(TokenType.STRING, text if raw else _unescape(text), line, col))
 
     def _identifier(self):
         line, col = self.line, self.col; start = self.pos
@@ -190,7 +194,11 @@ class Lexer:
     def _operator(self):
         line, col = self.line, self.col; ch = self._advance()
         pair = ch + self._peek()
-        two_char = {'==': TokenType.EQ, '!=': TokenType.NEQ, '<=': TokenType.LTE, '>=': TokenType.GTE, '//': TokenType.DOUBLE_SLASH, '**': TokenType.DOUBLE_STAR, '+=': TokenType.AUG_ASSIGN, '-=': TokenType.AUG_ASSIGN, '*=': TokenType.AUG_ASSIGN, '/=': TokenType.AUG_ASSIGN, '%=': TokenType.AUG_ASSIGN, '<<': TokenType.LSHIFT, '>>': TokenType.RSHIFT, '&=': TokenType.AUG_ASSIGN, '|=': TokenType.AUG_ASSIGN, '^=': TokenType.AUG_ASSIGN}
+        if pair + self._peek(1) in ('//=', '**=', '<<=', '>>='):
+            tri = pair + self._peek(1)
+            self._advance(); self._advance()
+            self.tokens.append(Token(TokenType.AUG_ASSIGN, tri, line, col)); return
+        two_char = {'==': TokenType.EQ, '!=': TokenType.NEQ, '<=': TokenType.LTE, '>=': TokenType.GTE, '//': TokenType.DOUBLE_SLASH, '**': TokenType.DOUBLE_STAR, '+=': TokenType.AUG_ASSIGN, '-=': TokenType.AUG_ASSIGN, '*=': TokenType.AUG_ASSIGN, '/=': TokenType.AUG_ASSIGN, '%=': TokenType.AUG_ASSIGN, '<<': TokenType.LSHIFT, '>>': TokenType.RSHIFT, '&=': TokenType.AUG_ASSIGN, '|=': TokenType.AUG_ASSIGN, '^=': TokenType.AUG_ASSIGN, ':=': TokenType.WALRUS}
         if pair in two_char: self._advance(); self.tokens.append(Token(two_char[pair], pair, line, col)); return
         one_char = {'+': TokenType.PLUS, '-': TokenType.MINUS, '*': TokenType.STAR, '/': TokenType.SLASH, '%': TokenType.PERCENT, '<': TokenType.LT, '>': TokenType.GT, '=': TokenType.ASSIGN, '(': TokenType.LPAREN, ')': TokenType.RPAREN, '[': TokenType.LBRACKET, ']': TokenType.RBRACKET, '{': TokenType.LBRACE, '}': TokenType.RBRACE, ',': TokenType.COMMA, ':': TokenType.COLON, '.': TokenType.DOT, '&': TokenType.AMP, '|': TokenType.PIPE, '^': TokenType.CARET, '~': TokenType.TILDE, '@': TokenType.AT}
         if ch in one_char:

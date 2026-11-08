@@ -64,7 +64,15 @@ class Parser:
             self._match(TokenType.NEWLINE)
             return AssertStmt(test, msg, line=ln)
         if self._match(TokenType.RAISE):
-            val = None if self._check(TokenType.NEWLINE) else self._expression(); self._match(TokenType.NEWLINE); return RaiseStmt(val, line=ln)
+            val = None if self._check(TokenType.NEWLINE) else self._expression()
+            cause = None
+            if val is not None and self._check(TokenType.IDENTIFIER) and self._cur().value == "from":
+                self.pos += 1
+                cause = self._expression()
+            self._match(TokenType.NEWLINE)
+            rs = RaiseStmt(val, line=ln)
+            rs.cause = cause
+            return rs
         if self._match(TokenType.PASS): self._expect(TokenType.NEWLINE); return PassStmt()
         if self._match(TokenType.BREAK): self._expect(TokenType.NEWLINE); return BreakStmt()
         if self._match(TokenType.CONTINUE): self._expect(TokenType.NEWLINE); return ContinueStmt()
@@ -77,21 +85,25 @@ class Parser:
                 raise SyntaxError(f"Line {ln}: Invalid augmented assignment target")
             value = self._expression()
             self._expect(TokenType.NEWLINE)
-            return Assign(expr, BinOp(expr, op, value, line=ln), line=ln)
+            return Assign(expr, BinOp(expr, op + "=", value, line=ln), line=ln)
         # Tuple assignment target: 'a, b = ...' parses as TupleExpr(left)
         if self._match(TokenType.COMMA):
-            elements = [expr, self._expression()]
-            while self._match(TokenType.COMMA):
+            elements = [expr]
+            while True:
+                if self._check(TokenType.ASSIGN) or self._check(TokenType.NEWLINE): break
                 elements.append(self._expression())
+                if not self._match(TokenType.COMMA): break
             expr = TupleExpr(elements, line=ln)
         if self._match(TokenType.ASSIGN):
             if isinstance(expr, (Var, Subscript, Attribute, TupleExpr)):
                 value = self._expression()
                 # RHS tuple: 'x = 1, 2' or 'a, b = b, a'
                 if self._match(TokenType.COMMA):
-                    elems = [value, self._expression()]
-                    while self._match(TokenType.COMMA):
+                    elems = [value]
+                    while True:
+                        if self._check(TokenType.NEWLINE): break
                         elems.append(self._expression())
+                        if not self._match(TokenType.COMMA): break
                     value = TupleExpr(elems, line=ln)
                 if self._check(TokenType.ASSIGN):
                     targets = [expr, value]
@@ -170,23 +182,31 @@ class Parser:
         ln = self._cur().line
         name = self._expect(TokenType.IDENTIFIER).value
         self._expect(TokenType.LPAREN)
-        params, defaults, vararg, kwarg = [], [], None, None
+        params, defaults, vararg, kwarg, kwonly = [], [], None, None, []
+        star_seen = False
         if not self._check(TokenType.RPAREN):
             while True:
                 if self._match(TokenType.DOUBLE_STAR):
                     kwarg = self._expect(TokenType.IDENTIFIER).value
                 elif self._match(TokenType.STAR):
-                    vararg = self._expect(TokenType.IDENTIFIER).value
+                    star_seen = True
+                    if self._check(TokenType.IDENTIFIER):
+                        vararg = self._advance().value
                 else:
-                    param_name = self._expect(TokenType.IDENTIFIER).value
-                    params.append(param_name)
-                    if self._match(TokenType.ASSIGN): defaults.append(self._expression())
-                    else: defaults.append(None)
+                    pname = self._expect(TokenType.IDENTIFIER).value
+                    default = self._expression() if self._match(TokenType.ASSIGN) else None
+                    if star_seen:
+                        kwonly.append((pname, default))
+                    else:
+                        params.append(pname)
+                        defaults.append(default)
                 if not self._match(TokenType.COMMA): break
                 if self._check(TokenType.RPAREN): break
         self._expect(TokenType.RPAREN)
         body = self._block()
-        return FuncDef(name, params, defaults, vararg, body, line=ln, kwarg=kwarg)
+        fd = FuncDef(name, params, defaults, vararg, body, line=ln, kwarg=kwarg)
+        fd.kwonly = kwonly
+        return fd
 
     def _class_def(self):
         name = self._expect(TokenType.IDENTIFIER).value
@@ -244,15 +264,29 @@ class Parser:
     def _expression(self):
         if self._match(TokenType.LAMBDA):
             ln = self.tokens[self.pos - 1].line
-            params = []; defaults = []
+            params = []; defaults = []; vararg = None; kwarg = None
             if not self._check(TokenType.COLON):
                 while True:
-                    params.append(self._expect(TokenType.IDENTIFIER).value)
-                    defaults.append(self._or() if self._match(TokenType.ASSIGN) else None)
+                    if self._match(TokenType.DOUBLE_STAR):
+                        kwarg = self._expect(TokenType.IDENTIFIER).value
+                    elif self._match(TokenType.STAR):
+                        vararg = self._expect(TokenType.IDENTIFIER).value
+                    else:
+                        params.append(self._expect(TokenType.IDENTIFIER).value)
+                        defaults.append(self._or() if self._match(TokenType.ASSIGN) else None)
                     if not self._match(TokenType.COMMA): break
             self._expect(TokenType.COLON)
-            return Lambda(params, self._expression(), line=ln, defaults=defaults)
+            lam = Lambda(params, self._expression(), line=ln, defaults=defaults)
+            lam.vararg = vararg
+            lam.kwarg = kwarg
+            return lam
         expr = self._or()
+        if self._check(TokenType.WALRUS):
+            if not isinstance(expr, Var):
+                raise SyntaxError(f"Line {self._cur().line}: cannot use assignment expressions with this target")
+            ln = self._cur().line
+            self.pos += 1
+            return NamedExpr(expr.name, self._expression(), line=ln)
         if self._check(TokenType.IF):
             ln = self._cur().line
             self.pos += 1

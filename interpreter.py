@@ -228,7 +228,12 @@ class Interpreter:
                 raise AssertionError(str(msg))
         elif isinstance(node, RaiseStmt):
             if node.value is None: raise
-            raise _make_raise(self, self._eval_expr(node.value, env))
+            _exc = _make_raise(self, self._eval_expr(node.value, env))
+            if getattr(node, "cause", None) is not None:
+                _cause = self._eval_expr(node.cause, env)
+                if isinstance(_exc, PyRaise) and _exc.inst is not None and isinstance(_cause, UserInstance):
+                    _exc.inst.attributes["__cause__"] = _cause
+            raise _exc
         elif isinstance(node, IfStmt):
             if self._is_truthy(self._eval_expr(node.condition, env)):
                 self._eval_block(node.then_branch, env); return
@@ -259,10 +264,12 @@ class Interpreter:
                 self._eval_block(node.else_body, env)
         elif isinstance(node, FuncDef):
             evaluated_defaults = [self._eval_expr(d, env) if d is not None else None for d in node.defaults]
+            evaluated_kwonly = [(k, self._eval_expr(d, env) if d is not None else _MISSING) for k, d in (getattr(node, 'kwonly', None) or [])]
             def func(*args, **kwargs):
-                func_env = Environment(env); _check_kwargs(node.name, node.params, kwargs, node.kwarg)
-                if node.kwarg: func_env.set(node.kwarg, {k: v for k, v in kwargs.items() if k not in node.params})
-                if node.vararg: func_env.set(node.vararg, list(args[len(node.params):]))
+                func_env = Environment(env); _check_kwargs(node.name, list(node.params) + _kwonly_names(node), kwargs, node.kwarg)
+                if node.kwarg: func_env.set(node.kwarg, {k: v for k, v in kwargs.items() if k not in node.params and k not in _kwonly_names(node)})
+                if node.vararg: func_env.set(node.vararg, tuple(args[len(node.params):]))
+                _bind_kwonly(node, func_env, kwargs, evaluated_kwonly)
                 for i, param in enumerate(node.params):
                     if i < len(args) or param in kwargs: func_env.set(param, args[i] if i < len(args) else kwargs[param])
                     elif evaluated_defaults[i] is not None: func_env.set(param, evaluated_defaults[i])
@@ -583,6 +590,10 @@ class Interpreter:
         return True
 
     def _eval_expr(self, node, env):
+        if isinstance(node, NamedExpr):
+            _v = self._eval_expr(node.value, env)
+            env.set(node.name, _v)
+            return _v
         if isinstance(node, Const): return node.value
         if isinstance(node, Number): return node.value
         if isinstance(node, String): return node.value
@@ -624,6 +635,8 @@ class Interpreter:
                     if i < len(args): lam_env.set(p, args[i])
                     elif p in kw: lam_env.set(p, kw[p])
                     else: lam_env.set(p, lam_defaults[i])
+                if getattr(node, "vararg", None): lam_env.set(node.vararg, tuple(args[len(node.params):]))
+                if getattr(node, "kwarg", None): lam_env.set(node.kwarg, {k: v for k, v in kw.items() if k not in node.params})
                 return self._eval_expr(node.body, lam_env)
             return lam
         if isinstance(node, DictComp):
@@ -635,6 +648,8 @@ class Interpreter:
                     result[self._eval_expr(node.key, loop_env)] = self._eval_expr(node.value, loop_env)
             return result
         if isinstance(node, BinOp):
+            if node.op in _INPLACE:
+                return _INPLACE[node.op](self._eval_expr(node.left, env), self._eval_expr(node.right, env))
             if node.op == "and":
                 l_val = self._eval_expr(node.left, env)
                 return self._eval_expr(node.right, env) if self._is_truthy(l_val) else l_val
@@ -946,6 +961,13 @@ def _eval_fstring2(interp, raw, env):
             if len(expr_text) >= 2 and expr_text[-2] == "!" and expr_text[-1] in "rsa":
                 conv = expr_text[-1]
                 expr_text = expr_text[:-2]
+            debug = None
+            _st = expr_text.rstrip()
+            if _st.endswith("=") and not _st.endswith(("==", "!=", "<=", ">=")):
+                debug = expr_text
+                expr_text = _st[:-1]
+                if conv is None and not spec:
+                    conv = "r"
             tree = _P(_L(expr_text).tokenize()).parse()
             if not tree.statements or not hasattr(tree.statements[0], "expr"):
                 raise SyntaxError("f-string: invalid expression")
@@ -964,7 +986,7 @@ def _eval_fstring2(interp, raw, env):
             if lit:
                 out.append(_unescape("".join(lit)))
                 lit = []
-            out.append(piece)
+            out.append((debug + piece) if debug is not None else piece)
             i = j + 1
             continue
         if c == "}":
@@ -1192,14 +1214,16 @@ def _call_any(interp, callee, *args, **kwargs):
 def _make_method(interp, m, owner, class_env, defaults):
     kwarg = getattr(m, "kwarg", None)
     label = owner.name + "." + m.name
+    kwonly_vals = [(k, interp._eval_expr(d, class_env) if d is not None else _MISSING) for k, d in (getattr(m, 'kwonly', None) or [])]
 
     def method_func(*args, **kwargs):
-        _check_kwargs(m.name, m.params, kwargs, kwarg)
+        _check_kwargs(m.name, list(m.params) + _kwonly_names(m), kwargs, kwarg)
         scope = Environment(class_env)
         if kwarg:
-            scope.set(kwarg, {k: v for k, v in kwargs.items() if k not in m.params})
+            scope.set(kwarg, {k: v for k, v in kwargs.items() if k not in m.params and k not in _kwonly_names(m)})
         if m.vararg:
-            scope.set(m.vararg, list(args[len(m.params):]))
+            scope.set(m.vararg, tuple(args[len(m.params):]))
+        _bind_kwonly(m, scope, kwargs, kwonly_vals)
         for i, param in enumerate(m.params):
             if i < len(args):
                 scope.set(param, args[i])
@@ -1262,3 +1286,30 @@ def _exec_classdef(interp, node, env):
         body.set(m.name, member)
         cls_obj.methods[m.name] = member
     env.set(node.name, cls_obj)
+
+
+import operator as _operator
+
+_INPLACE = {
+    "+=": _operator.iadd, "-=": _operator.isub, "*=": _operator.imul, "/=": _operator.itruediv,
+    "//=": _operator.ifloordiv, "%=": _operator.imod, "**=": _operator.ipow,
+    "&=": _operator.iand, "|=": _operator.ior, "^=": _operator.ixor,
+    "<<=": _operator.ilshift, ">>=": _operator.irshift,
+}
+
+for _n in ("add", "sub", "mul", "truediv", "floordiv", "mod", "pow", "and", "or", "xor", "lshift", "rshift"):
+    setattr(UserInstance, "__i" + _n + "__", _delegate("__i" + _n + "__"))
+
+
+def _kwonly_names(fnode):
+    return [k for k, _ in (getattr(fnode, "kwonly", None) or [])]
+
+
+def _bind_kwonly(fnode, scope, kwargs, vals):
+    for k, default in vals:
+        if k in kwargs:
+            scope.set(k, kwargs[k])
+        elif default is not _MISSING:
+            scope.set(k, default)
+        else:
+            raise TypeError(f"{fnode.name}() missing required keyword-only argument: '{k}'")

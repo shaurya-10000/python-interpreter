@@ -30,20 +30,20 @@ No `ast` module. No `eval()`. Just hand-written lexing, parsing, and tree-walkin
 
 | Category | Supported |
 | :--- | :--- |
-| **Lexer** | Indentation (INDENT/DEDENT), comments, single-, double- and triple-quoted strings, escape sequences, f-string literals, multi-character operators |
+| **Lexer** | Indentation (INDENT/DEDENT), comments, single-, double- and triple-quoted strings, raw strings, escape sequences, f-string literals, multi-character operators |
 | **Parser** | Recursive descent with operator precedence (arithmetic, comparison, boolean logic, unary) |
 | **Control flow** | `if` / `elif` / `else`, `while`, `for`, `break`, `continue`, `pass` |
 | **Loop else** | `while...else`, `for...else` (else runs when the loop exits without `break`) |
-| **Functions** | `def`, `return`, recursion, closures, default arguments, keyword arguments, `*args`, `**kwargs`, `*` / `**` unpacking in calls, lambda defaults, decorators (stacked, with arguments), `global`, `nonlocal` |
+| **Functions** | `def`, `return`, recursion, closures, default arguments, keyword arguments, `*args`, `**kwargs`, `*` / `**` unpacking in calls, lambda defaults and `*args`, keyword-only parameters, decorators (stacked, with arguments), `global`, `nonlocal` |
 | **Data structures** | Lists, dicts, sets, tuples (including `(1,)`), list / dict / set comprehensions with several `for` and `if` clauses and tuple targets, generator expressions (evaluated eagerly) |
 | **Unpacking** | `a, b = 1, 2`, `a, *rest = xs`, nested targets, `for a, b in pairs`, `[*a, *b]`, `{**a, **b}` |
 | **Indexing** | `x[0]`, `d["key"]`, `x[0] = 5`, slicing `x[1:3]` |
-| **Expressions** | augmented assignment (`+=`), `in` / `not in`, `is` / `is not`, ternary, `lambda`, dict comprehensions, chained comparisons, short-circuit `and` / `or`, bitwise operators (`& | ^ ~ << >>`), set operators |
+| **Expressions** | augmented assignment (`+=`), `in` / `not in`, `is` / `is not`, ternary, `lambda`, dict comprehensions, chained comparisons, short-circuit `and` / `or`, bitwise operators (`& | ^ ~ << >>`), set operators, assignment expressions (`:=`), every augmented assignment operator (in place, with `__iadd__` and friends) |
 | **Statements** | `del`, chained assignment (`a = b = 1`), `pass` in class bodies |
 | **OOP** | `class`, `__init__`, `self`, class attributes, single and multiple inheritance (C3 method resolution order), cooperative `super()`, `@property` with setters, `@staticmethod`, `@classmethod`, `object` |
 | **Magic methods** | `__str__`, `__repr__`, `__eq__`, `__hash__`, ordering (`__lt__` and friends), arithmetic and reflected operators (`__add__`, `__radd__`, ...), `__neg__`, `__abs__`, `__bool__`, `__len__`, `__getitem__` / `__setitem__` / `__delitem__`, `__contains__`, `__iter__` / `__next__`, `__call__` |
-| **Exceptions** | `try` / `except` / `else` / `finally`, typed `except ValueError as e`, `except (A, B)`, multiple `except` clauses, `raise ValueError(...)`, custom exception classes, bare `raise`, built-in exception hierarchy |
-| **Modern syntax** | f-strings with `{expr}`, format specs (`{x:.2f}`, `{n:,}`), nested specs, `!r` / `!s`; `assert` with optional message |
+| **Exceptions** | `try` / `except` / `else` / `finally`, typed `except ValueError as e`, `except (A, B)`, multiple `except` clauses, `raise ValueError(...)`, `raise X from Y`, custom exception classes, bare `raise`, built-in exception hierarchy |
+| **Modern syntax** | f-strings with `{expr}`, format specs (`{x:.2f}`, `{n:,}`), nested specs, `!r` / `!s`, debug form `{x=}`; `assert` with optional message |
 | **Builtins** | `print`, `len`, `range`, `str`, `int`, `float`, `bool`, `type`, `repr`, `input`, `enumerate`, `zip`, `sum`, `min`, `max`, `abs`, `sorted`, `reversed`, `any`, `all`, `map`, `filter`, `list`, `dict`, `set`, `tuple`, `round`, `pow`, `divmod`, `chr`, `ord`, `format`, `isinstance`, `hasattr`, `getattr`, `setattr`, `callable`, `iter`, `next`, with keyword arguments such as `print(sep=, end=)` and `sorted(key=, reverse=)` |
 | **Methods** | String and list methods delegate to the host Python objects |
 | **Debugging** | Line-numbered runtime errors, call-stack tracebacks on exceptions |
@@ -252,7 +252,6 @@ The workflow is defined in `.github/workflows/ci.yml`.
 - **Generator expressions are evaluated eagerly** (they behave like a one-shot iterator over a precomputed list).
 - **Only a subset of Python is implemented.** See the feature matrix.
 - **Class bodies** may contain methods, simple attribute assignments, and docstrings, but not nested classes or control flow.
-- **`x += y` is evaluated as `x = x + y`**, so `__iadd__` is not used and `+=` on a list creates a new list.
 - **No imports, generators, or `with` statements** (yet).
 
 ## Project structure

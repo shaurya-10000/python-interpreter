@@ -92,3 +92,6 @@ class Const: value: Any
 class Starred: value: Any; line: int = 0
 @dataclass
 class Comp: kind: str; elt: Any; elt2: Any; clauses: Any; line: int = 0
+
+@dataclass
+class NamedExpr: name: str; value: Any; line: int = 0
