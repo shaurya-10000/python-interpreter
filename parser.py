@@ -32,6 +32,12 @@ class Parser:
         if self._match(TokenType.CLASS): return self._class_def()
         if self._match(TokenType.RETURN): return self._return_statement()
         if self._match(TokenType.TRY): return self._try_statement()
+        if self._check(TokenType.AT):
+            decorators = self._decorators()
+            self._expect(TokenType.DEF)
+            fd = self._func_def()
+            fd.decorators = decorators
+            return fd
         if self._match(TokenType.GLOBAL):
             names = [self._expect(TokenType.IDENTIFIER).value]
             while self._match(TokenType.COMMA):
@@ -184,19 +190,29 @@ class Parser:
 
     def _class_def(self):
         name = self._expect(TokenType.IDENTIFIER).value
-        parent_class = None
+        bases = []
         if self._match(TokenType.LPAREN):
-            if not self._check(TokenType.RPAREN):
-                parent_class = self._expect(TokenType.IDENTIFIER).value
+            while not self._check(TokenType.RPAREN):
+                bases.append(self._expect(TokenType.IDENTIFIER).value)
+                if not self._match(TokenType.COMMA): break
             self._expect(TokenType.RPAREN)
+        parent_class = bases[0] if bases else None
         self._expect(TokenType.COLON); self._expect(TokenType.NEWLINE); self._expect(TokenType.INDENT)
         methods = []; attrs = []
         while not self._check(TokenType.DEDENT) and not self._check(TokenType.EOF):
             if self._match(TokenType.NEWLINE): continue
-            if self._match(TokenType.DEF):
+            if self._check(TokenType.AT):
+                decorators = self._decorators()
+                self._expect(TokenType.DEF)
+                fd = self._func_def()
+                fd.decorators = decorators
+                methods.append(fd)
+            elif self._match(TokenType.DEF):
                 methods.append(self._func_def())
             elif self._match(TokenType.PASS):
                 self._match(TokenType.NEWLINE)
+            elif self._check(TokenType.STRING):
+                self._statement()
             elif self._check(TokenType.IDENTIFIER) and self.tokens[self.pos + 1].type == TokenType.ASSIGN:
                 stmt = self._statement()
                 if not isinstance(stmt, Assign):
@@ -204,7 +220,14 @@ class Parser:
                 attrs.append(stmt)
             else:
                 raise SyntaxError(f"Line {self._cur().line}: Unsupported statement in class body")
-        self._expect(TokenType.DEDENT); return ClassDef(name, parent_class, methods, attrs)
+        self._expect(TokenType.DEDENT); return ClassDef(name, parent_class, methods, attrs, bases)
+
+    def _decorators(self):
+        decorators = []
+        while self._match(TokenType.AT):
+            decorators.append(self._expression())
+            self._expect(TokenType.NEWLINE)
+        return decorators
 
     def _return_statement(self):
         ln = self._cur().line

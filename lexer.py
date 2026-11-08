@@ -192,7 +192,7 @@ class Lexer:
         pair = ch + self._peek()
         two_char = {'==': TokenType.EQ, '!=': TokenType.NEQ, '<=': TokenType.LTE, '>=': TokenType.GTE, '//': TokenType.DOUBLE_SLASH, '**': TokenType.DOUBLE_STAR, '+=': TokenType.AUG_ASSIGN, '-=': TokenType.AUG_ASSIGN, '*=': TokenType.AUG_ASSIGN, '/=': TokenType.AUG_ASSIGN, '%=': TokenType.AUG_ASSIGN, '<<': TokenType.LSHIFT, '>>': TokenType.RSHIFT, '&=': TokenType.AUG_ASSIGN, '|=': TokenType.AUG_ASSIGN, '^=': TokenType.AUG_ASSIGN}
         if pair in two_char: self._advance(); self.tokens.append(Token(two_char[pair], pair, line, col)); return
-        one_char = {'+': TokenType.PLUS, '-': TokenType.MINUS, '*': TokenType.STAR, '/': TokenType.SLASH, '%': TokenType.PERCENT, '<': TokenType.LT, '>': TokenType.GT, '=': TokenType.ASSIGN, '(': TokenType.LPAREN, ')': TokenType.RPAREN, '[': TokenType.LBRACKET, ']': TokenType.RBRACKET, '{': TokenType.LBRACE, '}': TokenType.RBRACE, ',': TokenType.COMMA, ':': TokenType.COLON, '.': TokenType.DOT, '&': TokenType.AMP, '|': TokenType.PIPE, '^': TokenType.CARET, '~': TokenType.TILDE}
+        one_char = {'+': TokenType.PLUS, '-': TokenType.MINUS, '*': TokenType.STAR, '/': TokenType.SLASH, '%': TokenType.PERCENT, '<': TokenType.LT, '>': TokenType.GT, '=': TokenType.ASSIGN, '(': TokenType.LPAREN, ')': TokenType.RPAREN, '[': TokenType.LBRACKET, ']': TokenType.RBRACKET, '{': TokenType.LBRACE, '}': TokenType.RBRACE, ',': TokenType.COMMA, ':': TokenType.COLON, '.': TokenType.DOT, '&': TokenType.AMP, '|': TokenType.PIPE, '^': TokenType.CARET, '~': TokenType.TILDE, '@': TokenType.AT}
         if ch in one_char:
             if ch in '([{': self.paren_depth += 1
             elif ch in ')]}': self.paren_depth -= 1

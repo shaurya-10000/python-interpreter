@@ -49,11 +49,11 @@ class WhileStmt: condition: Any; body: Any; else_body: Any = None
 @dataclass
 class ForStmt: target: Any; iterable: Any; body: Any; else_body: Any = None
 @dataclass
-class FuncDef: name: str; params: List[str]; defaults: List[Any]; vararg: str; body: Any; line: int = 0; kwarg: Any = None
+class FuncDef: name: str; params: List[str]; defaults: List[Any]; vararg: str; body: Any; line: int = 0; kwarg: Any = None; decorators: Any = None
 @dataclass
 class ReturnStmt: value: Any; line: int = 0
 @dataclass
-class ClassDef: name: str; parent_class: Any; methods: List[Any]; attrs: Any = None
+class ClassDef: name: str; parent_class: Any; methods: List[Any]; attrs: Any = None; bases: Any = None
 @dataclass
 class PassStmt: pass
 @dataclass
