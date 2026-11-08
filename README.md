@@ -41,10 +41,12 @@ No `ast` module. No `eval()`. Just hand-written lexing, parsing, and tree-walkin
 | **Expressions** | augmented assignment (`+=`), `in` / `not in`, `is` / `is not`, ternary, `lambda`, dict comprehensions, chained comparisons, short-circuit `and` / `or`, bitwise operators (`& | ^ ~ << >>`), set operators, assignment expressions (`:=`), every augmented assignment operator (in place, with `__iadd__` and friends) |
 | **Statements** | `del`, chained assignment (`a = b = 1`), `pass` in class bodies |
 | **OOP** | `class`, `__init__`, `self`, class attributes, single and multiple inheritance (C3 method resolution order), cooperative `super()`, `@property` with setters, `@staticmethod`, `@classmethod`, `object` |
+| **Modules** | `import m`, `import a.b as x`, `from m import x as y`, `from m import *` (honors `__all__`), packages with `__init__.py`, cached modules with their own scope, circular imports, `__name__ == "__main__"`, plus an allow-list of standard-library modules (`math`, `random`, `json`, `re`, `collections`, ...) |
+| **Context managers** | `with` statements: multiple items, early `return` / `break` / `continue`, exception suppression via `__exit__`, user classes with `__enter__` / `__exit__`, host objects such as `io.StringIO` and `open()` |
 | **Magic methods** | `__str__`, `__repr__`, `__eq__`, `__hash__`, ordering (`__lt__` and friends), arithmetic and reflected operators (`__add__`, `__radd__`, ...), `__neg__`, `__abs__`, `__bool__`, `__len__`, `__getitem__` / `__setitem__` / `__delitem__`, `__contains__`, `__iter__` / `__next__`, `__call__` |
 | **Exceptions** | `try` / `except` / `else` / `finally`, typed `except ValueError as e`, `except (A, B)`, multiple `except` clauses, `raise ValueError(...)`, `raise X from Y`, custom exception classes, bare `raise`, built-in exception hierarchy |
 | **Modern syntax** | f-strings with `{expr}`, format specs (`{x:.2f}`, `{n:,}`), nested specs, `!r` / `!s`, debug form `{x=}`; `assert` with optional message |
-| **Builtins** | `print`, `len`, `range`, `str`, `int`, `float`, `bool`, `type`, `repr`, `input`, `enumerate`, `zip`, `sum`, `min`, `max`, `abs`, `sorted`, `reversed`, `any`, `all`, `map`, `filter`, `list`, `dict`, `set`, `tuple`, `round`, `pow`, `divmod`, `chr`, `ord`, `format`, `isinstance`, `hasattr`, `getattr`, `setattr`, `callable`, `iter`, `next`, with keyword arguments such as `print(sep=, end=)` and `sorted(key=, reverse=)` |
+| **Builtins** | `print`, `len`, `range`, `str`, `int`, `float`, `bool`, `type`, `repr`, `input`, `enumerate`, `zip`, `sum`, `min`, `max`, `abs`, `sorted`, `reversed`, `any`, `all`, `map`, `filter`, `list`, `dict`, `set`, `tuple`, `round`, `pow`, `divmod`, `chr`, `ord`, `format`, `isinstance`, `hasattr`, `getattr`, `setattr`, `callable`, `iter`, `next`, `open`, with keyword arguments such as `print(sep=, end=)` and `sorted(key=, reverse=)` |
 | **Methods** | String and list methods delegate to the host Python objects |
 | **Debugging** | Line-numbered runtime errors, call-stack tracebacks on exceptions |
 | **REPL** | Interactive shell with multi-line block support |
@@ -182,6 +184,25 @@ Exceptions are real classes. Standard `try` / `except ValueError as e` and `rais
     assert 1 + 1 == 2
     assert 2 > 1, "math is broken"
 
+### Modules and context managers
+
+    import math
+    from geometry import Circle, area as circle_area
+    import utils.text as text
+
+    class Tracker:
+        def __enter__(self):
+            print("enter")
+            return self
+        def __exit__(self, exc_type, exc, tb):
+            print("exit")
+            return False
+
+    with Tracker() as t:
+        print(math.sqrt(16))
+
+See `examples/modules/` for a multi-file program with a package. It is run under CPython and under this interpreter in CI, and the output must match.
+
 ### Debugging
 
 Runtime errors report the line number, for example:
@@ -243,6 +264,7 @@ CI runs the smoke test and the comparison on every push and pull request:
 
     python main.py tests/test_basic.py
     python tests/compare_cpython.py
+    python tests/compare_examples.py
 
 The workflow is defined in `.github/workflows/ci.yml`.
 
@@ -252,13 +274,16 @@ The workflow is defined in `.github/workflows/ci.yml`.
 - **Generator expressions are evaluated eagerly** (they behave like a one-shot iterator over a precomputed list).
 - **Only a subset of Python is implemented.** See the feature matrix.
 - **Class bodies** may contain methods, simple attribute assignments, and docstrings, but not nested classes or control flow.
-- **No imports, generators, or `with` statements** (yet).
+- **Generators (`yield`) are not implemented yet**, so `contextlib.contextmanager` is unavailable.
+- **Only an allow-list of standard-library modules can be imported.** `os` and `sys` are deliberately not available.
+- **Errors inside an imported module** report that module's line numbers without the file name. Relative imports (`from . import x`) are not supported.
 
 ## Project structure
 
     python-interpreter/
     |-- .github/workflows/ci.yml    GitHub Actions CI
     |-- demo/                       Numbered demo scripts (feature coverage)
+    |-- examples/modules/           Multi-file import example, compared with CPython in CI
     |-- tests/
     |   |-- compare_cpython.py      Runs demos on CPython and PySubset, diffs stdout
     |   |-- test_basic.py           CI smoke test
@@ -286,7 +311,6 @@ The workflow is defined in `.github/workflows/ci.yml`.
 ## Roadmap
 
 - [ ] Bytecode VM
-- [ ] `import` and modules
 - [ ] Generators (`yield`)
 - [ ] Column-level error positions and source-snippet rendering
 

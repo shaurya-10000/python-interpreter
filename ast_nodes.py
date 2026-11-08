@@ -95,3 +95,10 @@ class Comp: kind: str; elt: Any; elt2: Any; clauses: Any; line: int = 0
 
 @dataclass
 class NamedExpr: name: str; value: Any; line: int = 0
+
+@dataclass
+class WithStmt: items: List[Any]; body: Any; line: int = 0
+@dataclass
+class ImportStmt: names: List[Any]; line: int = 0
+@dataclass
+class FromImportStmt: module: str; names: Any; line: int = 0

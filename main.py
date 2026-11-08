@@ -25,7 +25,8 @@ def main():
     if len(sys.argv) > 1:
         filename = sys.argv[1]
         try:
-            with open(filename, "r") as f: source = f.read()
+            with open(filename, "r", encoding="utf-8") as f: source = f.read()
+            interpreter.set_script(filename)
             run_source(source, interpreter)
         except FileNotFoundError: print(f"File not found: {filename}")
         return

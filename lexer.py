@@ -8,7 +8,7 @@ KEYWORDS = {
     "def": TokenType.DEF, "return": TokenType.RETURN, "pass": TokenType.PASS,
     "break": TokenType.BREAK, "continue": TokenType.CONTINUE,
     "class": TokenType.CLASS, "assert": TokenType.ASSERT, "try": TokenType.TRY, "except": TokenType.EXCEPT,
-    "raise": TokenType.RAISE, "as": TokenType.AS, "del": TokenType.DEL, "nonlocal": TokenType.NONLOCAL, "finally": TokenType.FINALLY, "global": TokenType.GLOBAL, "is": TokenType.IS, "lambda": TokenType.LAMBDA,
+    "raise": TokenType.RAISE, "as": TokenType.AS, "with": TokenType.WITH, "import": TokenType.IMPORT, "del": TokenType.DEL, "nonlocal": TokenType.NONLOCAL, "finally": TokenType.FINALLY, "global": TokenType.GLOBAL, "is": TokenType.IS, "lambda": TokenType.LAMBDA,
 }
 
 _ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "\\": "\\", "'": "'", '"': '"', "0": "\0", "a": "\a", "b": "\b", "f": "\f", "v": "\v"}

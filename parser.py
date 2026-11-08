@@ -32,6 +32,43 @@ class Parser:
         if self._match(TokenType.CLASS): return self._class_def()
         if self._match(TokenType.RETURN): return self._return_statement()
         if self._match(TokenType.TRY): return self._try_statement()
+        if self._match(TokenType.WITH):
+            items = []
+            while True:
+                ctx = self._expression()
+                var = None
+                if self._match(TokenType.AS):
+                    var = self._expect(TokenType.IDENTIFIER).value
+                items.append((ctx, var))
+                if not self._match(TokenType.COMMA): break
+            return WithStmt(items, self._block(), line=ln)
+        if self._match(TokenType.IMPORT):
+            names = []
+            while True:
+                dotted = self._dotted_name()
+                alias = self._expect(TokenType.IDENTIFIER).value if self._match(TokenType.AS) else None
+                names.append((dotted, alias))
+                if not self._match(TokenType.COMMA): break
+            self._match(TokenType.NEWLINE)
+            return ImportStmt(names, line=ln)
+        if self._check(TokenType.IDENTIFIER) and self._cur().value == "from" and self.tokens[self.pos + 1].type == TokenType.IDENTIFIER:
+            self.pos += 1
+            module = self._dotted_name()
+            self._expect(TokenType.IMPORT)
+            names = []
+            if self._match(TokenType.STAR):
+                names = None
+            else:
+                paren = self._match(TokenType.LPAREN)
+                while True:
+                    nm = self._expect(TokenType.IDENTIFIER).value
+                    alias = self._expect(TokenType.IDENTIFIER).value if self._match(TokenType.AS) else None
+                    names.append((nm, alias))
+                    if not self._match(TokenType.COMMA): break
+                    if paren and self._check(TokenType.RPAREN): break
+                if paren: self._expect(TokenType.RPAREN)
+            self._match(TokenType.NEWLINE)
+            return FromImportStmt(module, names, line=ln)
         if self._check(TokenType.AT):
             decorators = self._decorators()
             self._expect(TokenType.DEF)
@@ -241,6 +278,12 @@ class Parser:
             else:
                 raise SyntaxError(f"Line {self._cur().line}: Unsupported statement in class body")
         self._expect(TokenType.DEDENT); return ClassDef(name, parent_class, methods, attrs, bases)
+
+    def _dotted_name(self):
+        parts = [self._expect(TokenType.IDENTIFIER).value]
+        while self._match(TokenType.DOT):
+            parts.append(self._expect(TokenType.IDENTIFIER).value)
+        return ".".join(parts)
 
     def _decorators(self):
         decorators = []
