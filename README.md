@@ -35,13 +35,14 @@ No `ast` module. No `eval()`. Just hand-written lexing, parsing, and tree-walkin
 | **Control flow** | `if` / `elif` / `else`, `while`, `for`, `break`, `continue`, `pass` |
 | **Loop else** | `while...else`, `for...else` (else runs when the loop exits without `break`) |
 | **Functions** | `def`, `return`, recursion, closures, default arguments, keyword arguments, `*args`, `**kwargs`, `*` / `**` unpacking in calls, lambda defaults and `*args`, keyword-only parameters, decorators (stacked, with arguments), `global`, `nonlocal` |
-| **Data structures** | Lists, dicts, sets, tuples (including `(1,)`), list / dict / set comprehensions with several `for` and `if` clauses and tuple targets, generator expressions (evaluated eagerly) |
+| **Data structures** | Lists, dicts, sets, tuples (including `(1,)`), list / dict / set comprehensions with several `for` and `if` clauses and tuple targets, lazy generator expressions |
 | **Unpacking** | `a, b = 1, 2`, `a, *rest = xs`, nested targets, `for a, b in pairs`, `[*a, *b]`, `{**a, **b}` |
 | **Indexing** | `x[0]`, `d["key"]`, `x[0] = 5`, slicing `x[1:3]` |
 | **Expressions** | augmented assignment (`+=`), `in` / `not in`, `is` / `is not`, ternary, `lambda`, dict comprehensions, chained comparisons, short-circuit `and` / `or`, bitwise operators (`& | ^ ~ << >>`), set operators, assignment expressions (`:=`), every augmented assignment operator (in place, with `__iadd__` and friends) |
 | **Statements** | `del`, chained assignment (`a = b = 1`), `pass` in class bodies |
 | **OOP** | `class`, `__init__`, `self`, class attributes, single and multiple inheritance (C3 method resolution order), cooperative `super()`, `@property` with setters, `@staticmethod`, `@classmethod`, `object` |
 | **Modules** | `import m`, `import a.b as x`, `from m import x as y`, `from m import *` (honors `__all__`), packages with `__init__.py`, cached modules with their own scope, circular imports, `__name__ == "__main__"`, plus an allow-list of standard-library modules (`math`, `random`, `json`, `re`, `collections`, ...) |
+| **Generators** | `yield`, `yield from` (with return values), `send()`, `throw()`, `close()`, generator functions and methods, `__iter__` written as a generator, lazy generator expressions, `contextlib.contextmanager` |
 | **Context managers** | `with` statements: multiple items, early `return` / `break` / `continue`, exception suppression via `__exit__`, user classes with `__enter__` / `__exit__`, host objects such as `io.StringIO` and `open()` |
 | **Magic methods** | `__str__`, `__repr__`, `__eq__`, `__hash__`, ordering (`__lt__` and friends), arithmetic and reflected operators (`__add__`, `__radd__`, ...), `__neg__`, `__abs__`, `__bool__`, `__len__`, `__getitem__` / `__setitem__` / `__delitem__`, `__contains__`, `__iter__` / `__next__`, `__call__` |
 | **Exceptions** | `try` / `except` / `else` / `finally`, typed `except ValueError as e`, `except (A, B)`, multiple `except` clauses, `raise ValueError(...)`, `raise X from Y`, custom exception classes, bare `raise`, built-in exception hierarchy |
@@ -271,10 +272,10 @@ The workflow is defined in `.github/workflows/ci.yml`.
 ### Known differences from CPython
 
 - **Shorthand exceptions.** `raise("msg")` with a plain value and a bare `except as e` still work and bind `e` to the message string. Built-in runtime errors (such as division by zero) are mapped to the matching exception class by name.
-- **Generator expressions are evaluated eagerly** (they behave like a one-shot iterator over a precomputed list).
 - **Only a subset of Python is implemented.** See the feature matrix.
 - **Class bodies** may contain methods, simple attribute assignments, and docstrings, but not nested classes or control flow.
-- **Generators (`yield`) are not implemented yet**, so `contextlib.contextmanager` is unavailable.
+- **Generators run on helper threads.** Each started generator parks one thread until it finishes, so a generator abandoned half-way keeps its thread until the program exits, and its `finally` block does not run when it is garbage collected (call `close()` to run it). Each `yield` costs a thread handoff, which makes generators much slower than ordinary calls.
+- **Only `contextlib.contextmanager` is supported from `contextlib`.**
 - **Only an allow-list of standard-library modules can be imported.** `os` and `sys` are deliberately not available.
 - **Errors inside an imported module** report that module's line numbers without the file name. Relative imports (`from . import x`) are not supported.
 
@@ -311,7 +312,6 @@ The workflow is defined in `.github/workflows/ci.yml`.
 ## Roadmap
 
 - [ ] Bytecode VM
-- [ ] Generators (`yield`)
 - [ ] Column-level error positions and source-snippet rendering
 
 ## License

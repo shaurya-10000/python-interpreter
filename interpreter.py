@@ -287,6 +287,7 @@ class Interpreter:
             evaluated_defaults = [self._eval_expr(d, env) if d is not None else None for d in node.defaults]
             evaluated_kwonly = [(k, self._eval_expr(d, env) if d is not None else _MISSING) for k, d in (getattr(node, 'kwonly', None) or [])]
             frame_entry = (node.name, getattr(node, 'line', 0))
+            is_gen = _is_generator_def(node)
             def func(*args, **kwargs):
                 func_env = Environment(env)
                 if kwargs: _check_kwargs(node.name, list(node.params) + _kwonly_names(node), kwargs, node.kwarg)
@@ -297,6 +298,8 @@ class Interpreter:
                     if i < len(args) or param in kwargs: func_env.set(param, args[i] if i < len(args) else kwargs[param])
                     elif evaluated_defaults[i] is not None: func_env.set(param, evaluated_defaults[i])
                     else: func_env.set(param, None)
+                if is_gen:
+                    return PyGenerator(self, node, func_env, node.name)
                 self.call_stack.append(frame_entry)
                 try:
                     try: self._eval_block(node.body, func_env)
@@ -448,10 +451,10 @@ class Interpreter:
         def _min(*args, key=None, default=_M): return _pick(min, args, key, default)
         def _max(*args, key=None, default=_M): return _pick(max, args, key, default)
         def _sum(xs, start=0): return sum(xs, start)
-        def _enumerate(xs, start=0): return list(enumerate(xs, start))
-        def _zip(*xs): return list(zip(*xs))
-        def _map(f, *xs): return list(map(f, *xs))
-        def _filter(f, xs): return list(filter(f, xs))
+        def _enumerate(xs, start=0): return enumerate(xs, start)
+        def _zip(*xs): return zip(*xs)
+        def _map(f, *xs): return map(f, *xs)
+        def _filter(f, xs): return filter(f, xs)
         reg("sorted", _sorted); reg("reversed", _reversed)
         reg("min", _min); reg("max", _max); reg("sum", _sum)
         reg("enumerate", _enumerate); reg("zip", _zip)
@@ -701,6 +704,8 @@ class Interpreter:
         if isinstance(node, Subscript): return _get_item(self._eval_expr(node.obj, env), self._eval_expr(node.index, env))
         if isinstance(node, Attribute):
             return _get_attr(self, self._eval_expr(node.obj, env), node.name)
+        if isinstance(node, YieldExpr): return _eval_yield(self, node, env)
+        if isinstance(node, YieldFromExpr): return _eval_yield_from(self, node, env)
         if isinstance(node, Comp): return _eval_comp(self, node, env)
         if isinstance(node, Starred): raise SyntaxError("can't use starred expression here")
         if isinstance(node, IfExpr):
@@ -974,6 +979,8 @@ def _assign_to(interp, target, value, env):
 
 
 def _eval_comp(interp, node, env):
+    if node.kind == "gen":
+        return _comp_gen(interp, node, env)
     items = []
     pairs = {}
     clauses = node.clauses
@@ -1304,6 +1311,7 @@ def _make_method(interp, m, owner, class_env, defaults):
     kwarg = getattr(m, "kwarg", None)
     label = owner.name + "." + m.name
     frame_entry = (label, getattr(m, "line", 0))
+    is_gen = _is_generator_def(m)
     kwonly_vals = [(k, interp._eval_expr(d, class_env) if d is not None else _MISSING) for k, d in (getattr(m, 'kwonly', None) or [])]
 
     def method_func(*args, **kwargs):
@@ -1331,6 +1339,8 @@ def _make_method(interp, m, owner, class_env, defaults):
         else:
             start = owner
         scope.set("super", lambda: UserInstanceProxy(_SuperView(owner, start), first))
+        if is_gen:
+            return PyGenerator(interp, m, scope, label)
         interp.call_stack.append(frame_entry)
         try:
             try:
@@ -1411,7 +1421,7 @@ import importlib as _importlib
 _ALLOWED_HOST = {
     "math", "cmath", "random", "time", "datetime", "string", "json", "re", "itertools", "functools",
     "collections", "statistics", "operator", "copy", "textwrap", "decimal", "fractions", "heapq",
-    "bisect", "io", "hashlib", "base64", "calendar", "pprint",
+    "bisect", "io", "hashlib", "base64", "calendar", "pprint", "contextlib",
 }
 
 
@@ -1614,3 +1624,248 @@ def _call_plain(callee, args):
     if not callable(callee):
         raise TypeError(f"'{type(callee).__name__}' object is not callable")
     return callee(*args)
+
+
+import threading as _threading
+
+_gen_tls = _threading.local()
+_GEN_STACK_BYTES = 8 * 1024 * 1024
+
+
+class _GenExit(BaseException):
+    pass
+
+
+class _GenCore:
+    def __init__(self, interp, node, env, name):
+        self.interp = interp
+        self.node = node
+        self.env = env
+        self.name = name
+        self.line = getattr(node, "line", 0)
+        self.thread = None
+        self.state = "created"
+        self.resume = _threading.Semaphore(0)
+        self.yielded = _threading.Semaphore(0)
+        self.send_value = None
+        self.throw = None
+        self.out = None
+        self.stack = []
+
+
+def _gen_thread_main(core):
+    interp = core.interp
+    _gen_tls.core = core
+    try:
+        interp.call_stack.append((core.name, core.line))
+        try:
+            interp._eval_block(core.node.body, core.env)
+            core.out = ("return", None)
+        except ReturnException as ret:
+            core.out = ("return", ret.value)
+    except _GenExit:
+        core.out = ("return", None)
+    except BaseException as e:
+        core.out = ("raise", e)
+    finally:
+        core.yielded.release()
+
+
+def _gen_step(core, value=None, exc=None):
+    if core.state == "running":
+        raise ValueError("generator already executing")
+    if core.state == "done":
+        if exc is not None:
+            raise exc
+        raise StopIteration
+    interp = core.interp
+    core.send_value = value
+    core.throw = exc
+    saved = interp.call_stack
+    interp.call_stack = core.stack
+    core.state = "running"
+    if core.thread is None:
+        previous = None
+        try:
+            previous = _threading.stack_size(_GEN_STACK_BYTES)
+        except (ValueError, RuntimeError):
+            previous = None
+        thread = _threading.Thread(target=_gen_thread_main, args=(core,), daemon=True)
+        core.thread = thread
+        try:
+            thread.start()
+        except RuntimeError:
+            interp.call_stack = saved
+            core.state = "done"
+            raise RuntimeError("could not start a helper thread for this generator")
+        finally:
+            if previous is not None:
+                try:
+                    _threading.stack_size(previous)
+                except (ValueError, RuntimeError):
+                    pass
+    else:
+        core.resume.release()
+    core.yielded.acquire()
+    interp.call_stack = saved
+    kind, payload = core.out
+    core.out = None
+    if kind == "yield":
+        core.state = "suspended"
+        return payload
+    core.state = "done"
+    if kind == "return":
+        raise StopIteration(payload)
+    if isinstance(payload, StopIteration):
+        raise RuntimeError("generator raised StopIteration") from payload
+    raise payload
+
+
+def _gen_suspend(core, value):
+    core.out = ("yield", value)
+    core.yielded.release()
+    core.resume.acquire()
+    if core.throw is not None:
+        err = core.throw
+        core.throw = None
+        raise err
+    sent = core.send_value
+    core.send_value = None
+    return sent
+
+
+class PyGenerator:
+    def __init__(self, interp, node, env, name):
+        self._core = _GenCore(interp, node, env, name)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return _gen_step(self._core)
+
+    def send(self, value=None):
+        core = self._core
+        if core.state == "created" and value is not None:
+            raise TypeError("can't send non-None value to a just-started generator")
+        return _gen_step(core, value)
+
+    def throw(self, exc, val=None, tb=None):
+        core = self._core
+        target = val if isinstance(val, UserInstance) else exc
+        err = _make_raise(core.interp, target)
+        if core.state == "created":
+            core.state = "done"
+            raise err
+        return _gen_step(core, None, err)
+
+    def close(self):
+        core = self._core
+        if core.state == "created":
+            core.state = "done"
+            return None
+        if core.state == "done":
+            return None
+        if core.state == "running":
+            raise ValueError("generator already executing")
+        try:
+            _gen_step(core, None, _GenExit())
+        except StopIteration:
+            return None
+        except _GenExit:
+            return None
+        raise RuntimeError("generator ignored GeneratorExit")
+
+    def __repr__(self):
+        return "<generator object " + self._core.name + ">"
+
+
+PyGenerator.__name__ = "generator"
+
+
+def _contains_yield(node):
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if isinstance(n, (YieldExpr, YieldFromExpr)):
+            return True
+        if isinstance(n, (FuncDef, Lambda, ClassDef)):
+            continue
+        if isinstance(n, (list, tuple)):
+            stack.extend(n)
+        elif hasattr(n, "__dataclass_fields__"):
+            for f in n.__dataclass_fields__:
+                stack.append(getattr(n, f))
+    return False
+
+
+def _is_generator_def(fnode):
+    flag = getattr(fnode, "_is_gen", None)
+    if flag is None:
+        flag = _contains_yield(fnode.body)
+        fnode._is_gen = flag
+    return flag
+
+
+def _current_core(interp):
+    core = getattr(_gen_tls, "core", None)
+    if core is None or core.interp is not interp:
+        raise SyntaxError("'yield' outside function")
+    return core
+
+
+def _eval_yield(interp, node, env):
+    core = _current_core(interp)
+    value = interp._eval_expr(node.value, env) if node.value is not None else None
+    return _gen_suspend(core, value)
+
+
+def _eval_yield_from(interp, node, env):
+    core = _current_core(interp)
+    source = interp._eval_expr(node.value, env)
+    if isinstance(source, PyGenerator):
+        sub = source._core
+        try:
+            item = _gen_step(sub)
+        except StopIteration as stop:
+            return stop.value
+        while True:
+            try:
+                sent = _gen_suspend(core, item)
+            except _GenExit:
+                source.close()
+                raise
+            except Exception as e:
+                try:
+                    item = _gen_step(sub, None, e)
+                except StopIteration as stop:
+                    return stop.value
+                continue
+            try:
+                item = _gen_step(sub, sent)
+            except StopIteration as stop:
+                return stop.value
+    for item in source:
+        _gen_suspend(core, item)
+    return None
+
+
+def _comp_gen(interp, node, env):
+    clauses = node.clauses
+    outer = iter(interp._eval_expr(clauses[0][2], env))
+
+    def walk(i, scope):
+        if i == len(clauses):
+            yield interp._eval_expr(node.elt, scope)
+            return
+        clause = clauses[i]
+        if clause[0] == "for":
+            source = outer if i == 0 else interp._eval_expr(clause[2], scope)
+            for item in source:
+                inner = Environment(scope)
+                _assign_to(interp, clause[1], item, inner)
+                yield from walk(i + 1, inner)
+        elif interp._is_truthy(interp._eval_expr(clause[1], scope)):
+            yield from walk(i + 1, scope)
+
+    return walk(0, Environment(env))

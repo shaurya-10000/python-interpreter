@@ -102,3 +102,8 @@ class WithStmt: items: List[Any]; body: Any; line: int = 0
 class ImportStmt: names: List[Any]; line: int = 0
 @dataclass
 class FromImportStmt: module: str; names: Any; line: int = 0
+
+@dataclass
+class YieldExpr: value: Any; line: int = 0
+@dataclass
+class YieldFromExpr: value: Any; line: int = 0

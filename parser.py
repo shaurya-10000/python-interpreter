@@ -305,6 +305,23 @@ class Parser:
         self._match(TokenType.NEWLINE); return ReturnStmt(val, line=ln)
 
     def _expression(self):
+        if self._match(TokenType.YIELD):
+            ln = self.tokens[self.pos - 1].line
+            if self._check(TokenType.IDENTIFIER) and self._cur().value == "from":
+                self.pos += 1
+                return YieldFromExpr(self._expression(), line=ln)
+            if (self._check(TokenType.NEWLINE) or self._check(TokenType.RPAREN) or self._check(TokenType.RBRACKET)
+                    or self._check(TokenType.RBRACE) or self._check(TokenType.EOF) or self._check(TokenType.DEDENT)):
+                return YieldExpr(None, line=ln)
+            value = self._expression()
+            if self._check(TokenType.COMMA):
+                elems = [value]
+                while self._match(TokenType.COMMA):
+                    if self._check(TokenType.NEWLINE) or self._check(TokenType.RPAREN):
+                        break
+                    elems.append(self._expression())
+                value = TupleExpr(elems, line=ln)
+            return YieldExpr(value, line=ln)
         if self._match(TokenType.LAMBDA):
             ln = self.tokens[self.pos - 1].line
             params = []; defaults = []; vararg = None; kwarg = None
