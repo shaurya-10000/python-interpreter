@@ -1,15 +1,20 @@
+_EMPTY = frozenset()
+
+
 class Environment:
     def __init__(self, parent=None):
         self.vars = {}
         self.parent = parent
-        self.global_names = set()
-        self.nonlocal_names = set()
+        self.global_names = _EMPTY
+        self.nonlocal_names = _EMPTY
 
     def get(self, name):
-        if name in self.vars:
-            return self.vars[name]
-        if self.parent:
-            return self.parent.get(name)
+        e = self
+        while e is not None:
+            v = e.vars
+            if name in v:
+                return v[name]
+            e = e.parent
         raise NameError(f"Name '{name}' is not defined")
 
     def set(self, name, value):

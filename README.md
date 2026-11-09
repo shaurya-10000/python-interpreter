@@ -243,8 +243,8 @@ Benchmark: `fib(25)`, timed in-process so Python startup time is excluded.
 
 | Runtime | Time | Relative |
 | :--- | :--- | :--- |
-| CPython 3.12 | ~7 ms | 1x |
-| PySubset Interpreter | ~1,300-1,450 ms | ~175-210x slower |
+| CPython 3.12 | ~9 ms | 1x |
+| PySubset Interpreter | ~2,536 ms | ~270x slower |
 
 That gap is expected for a tree-walking interpreter written in Python: it is an interpreter running on top of another interpreter. Timing whole processes (for example with `Measure-Command`) hides the gap, because interpreter startup dominates CPython's run.
 

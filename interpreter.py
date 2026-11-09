@@ -205,6 +205,27 @@ class Interpreter:
             raise
 
     def _eval_statement_inner(self, node, env):
+        t = type(node)
+        if t is ReturnStmt:
+            raise ReturnException(self._eval_expr(node.value, env) if node.value else None)
+        if t is ExprStmt:
+            self._eval_expr(node.expr, env)
+            return
+        if t is Assign and type(node.target) is Var:
+            env.set(node.target.name, self._eval_expr(node.value, env))
+            return
+        if t is IfStmt:
+            c = self._eval_expr(node.condition, env)
+            if c is True or (c is not False and self._is_truthy(c)):
+                self._eval_block(node.then_branch, env)
+                return
+            for cond, body in node.elif_branches:
+                if self._is_truthy(self._eval_expr(cond, env)):
+                    self._eval_block(body, env)
+                    return
+            if node.else_branch:
+                self._eval_block(node.else_branch, env)
+            return
         if isinstance(node, ExprStmt): self._eval_expr(node.expr, env)
         elif isinstance(node, PrintStmt):
             val = self._eval_expr(node.expr, env)
@@ -265,16 +286,18 @@ class Interpreter:
         elif isinstance(node, FuncDef):
             evaluated_defaults = [self._eval_expr(d, env) if d is not None else None for d in node.defaults]
             evaluated_kwonly = [(k, self._eval_expr(d, env) if d is not None else _MISSING) for k, d in (getattr(node, 'kwonly', None) or [])]
+            frame_entry = (node.name, getattr(node, 'line', 0))
             def func(*args, **kwargs):
-                func_env = Environment(env); _check_kwargs(node.name, list(node.params) + _kwonly_names(node), kwargs, node.kwarg)
+                func_env = Environment(env)
+                if kwargs: _check_kwargs(node.name, list(node.params) + _kwonly_names(node), kwargs, node.kwarg)
                 if node.kwarg: func_env.set(node.kwarg, {k: v for k, v in kwargs.items() if k not in node.params and k not in _kwonly_names(node)})
                 if node.vararg: func_env.set(node.vararg, tuple(args[len(node.params):]))
-                _bind_kwonly(node, func_env, kwargs, evaluated_kwonly)
+                if evaluated_kwonly: _bind_kwonly(node, func_env, kwargs, evaluated_kwonly)
                 for i, param in enumerate(node.params):
                     if i < len(args) or param in kwargs: func_env.set(param, args[i] if i < len(args) else kwargs[param])
                     elif evaluated_defaults[i] is not None: func_env.set(param, evaluated_defaults[i])
                     else: func_env.set(param, None)
-                self.call_stack.append((node.name, getattr(node, 'line', 0)))
+                self.call_stack.append(frame_entry)
                 try:
                     try: self._eval_block(node.body, func_env)
                     except ReturnException as ret: return ret.value
@@ -295,7 +318,7 @@ class Interpreter:
             raise ReturnException(self._eval_expr(node.value, env) if node.value else None)
         elif isinstance(node, BreakStmt): raise BreakException()
         elif isinstance(node, ContinueStmt): raise ContinueException()
-        elif isinstance(node, GlobalStmt): env.global_names.update(node.names)
+        elif isinstance(node, GlobalStmt): env.global_names = env.global_names | set(node.names)
         elif isinstance(node, DelStmt):
             for t in node.targets:
                 if isinstance(t, Var):
@@ -308,7 +331,7 @@ class Interpreter:
                     if isinstance(obj, UserInstance): del obj.attributes[t.name]
                     else: delattr(obj, t.name)
                 else: raise SyntaxError("cannot delete this expression")
-        elif isinstance(node, NonlocalStmt): env.nonlocal_names.update(node.names)
+        elif isinstance(node, NonlocalStmt): env.nonlocal_names = env.nonlocal_names | set(node.names)
         elif isinstance(node, ChainAssign):
             val = self._eval_expr(node.value, env)
             for t in node.targets:
@@ -619,6 +642,38 @@ class Interpreter:
         return True
 
     def _eval_expr(self, node, env):
+        t = type(node)
+        if t is Number or t is String or t is Bool:
+            return node.value
+        if t is Var:
+            e = env
+            name = node.name
+            while e is not None:
+                v = e.vars
+                if name in v:
+                    return v[name]
+                e = e.parent
+            raise NameError(f"Name '{name}' is not defined")
+        if t is BinOp:
+            f = _FAST_BINOPS.get(node.op)
+            if f is not None:
+                return f(self._eval_expr(node.left, env), self._eval_expr(node.right, env))
+        elif t is Call:
+            plain = getattr(node, "_plain", None)
+            if plain is None:
+                plain = (not node.kwargs and not node.kw_splats
+                         and not any(type(a) is Starred for a in node.args))
+                node._plain = plain
+            if plain:
+                callee = self._eval_expr(node.callee, env)
+                args = [self._eval_expr(a, env) for a in node.args]
+                if type(callee) is _FunctionType:
+                    return callee(*args)
+                return _call_plain(callee, args)
+        elif t is Attribute:
+            return _get_attr(self, self._eval_expr(node.obj, env), node.name)
+        elif t is Subscript:
+            return _get_item(self._eval_expr(node.obj, env), self._eval_expr(node.index, env))
         if isinstance(node, NamedExpr):
             _v = self._eval_expr(node.value, env)
             env.set(node.name, _v)
@@ -1248,16 +1303,17 @@ def _call_any(interp, callee, *args, **kwargs):
 def _make_method(interp, m, owner, class_env, defaults):
     kwarg = getattr(m, "kwarg", None)
     label = owner.name + "." + m.name
+    frame_entry = (label, getattr(m, "line", 0))
     kwonly_vals = [(k, interp._eval_expr(d, class_env) if d is not None else _MISSING) for k, d in (getattr(m, 'kwonly', None) or [])]
 
     def method_func(*args, **kwargs):
-        _check_kwargs(m.name, list(m.params) + _kwonly_names(m), kwargs, kwarg)
+        if kwargs: _check_kwargs(m.name, list(m.params) + _kwonly_names(m), kwargs, kwarg)
         scope = Environment(class_env)
         if kwarg:
             scope.set(kwarg, {k: v for k, v in kwargs.items() if k not in m.params and k not in _kwonly_names(m)})
         if m.vararg:
             scope.set(m.vararg, tuple(args[len(m.params):]))
-        _bind_kwonly(m, scope, kwargs, kwonly_vals)
+        if kwonly_vals: _bind_kwonly(m, scope, kwargs, kwonly_vals)
         for i, param in enumerate(m.params):
             if i < len(args):
                 scope.set(param, args[i])
@@ -1275,7 +1331,7 @@ def _make_method(interp, m, owner, class_env, defaults):
         else:
             start = owner
         scope.set("super", lambda: UserInstanceProxy(_SuperView(owner, start), first))
-        interp.call_stack.append((label, getattr(m, "line", 0)))
+        interp.call_stack.append(frame_entry)
         try:
             try:
                 interp._eval_block(m.body, scope)
@@ -1531,3 +1587,30 @@ def _exec_with(interp, node, env):
             leave(None, None, None)
 
     run(0)
+
+
+from types import FunctionType as _FunctionType
+
+_FAST_BINOPS = {
+    "+": _operator.add, "-": _operator.sub, "*": _operator.mul, "/": _operator.truediv,
+    "//": _operator.floordiv, "%": _operator.mod, "**": _operator.pow,
+    "==": _operator.eq, "!=": _operator.ne, "<": _operator.lt, ">": _operator.gt,
+    "<=": _operator.le, ">=": _operator.ge,
+}
+_FAST_BINOPS.update(_INPLACE)
+
+
+def _call_plain(callee, args):
+    if isinstance(callee, UserClass):
+        instance = UserInstance(callee)
+        init_method = callee.get_method("__init__")
+        if init_method:
+            init_method(instance, *args)
+        return instance
+    if isinstance(callee, UserInstance):
+        dunder_call = callee.cls.get_method("__call__")
+        if dunder_call is not None:
+            return dunder_call(callee, *args)
+    if not callable(callee):
+        raise TypeError(f"'{type(callee).__name__}' object is not callable")
+    return callee(*args)
