@@ -68,18 +68,23 @@ def _load_module(interp, name):
         source, path = found
         from lexer import Lexer
         from parser import Parser
+        interp.register_source(path, source)
         env = _new_module_env(interp, name, path)
         mod = PyModule(name, path, env)
         interp.modules[name] = mod
+        prev_file = interp.current_file
+        interp.current_file = path
         try:
             try:
-                tree = Parser(Lexer(source).tokenize()).parse()
+                tree = Parser(Lexer(source, filename=path).tokenize(), filename=path).parse()
             except SyntaxError as ex:
                 raise SyntaxError(f"in module '{name}': {ex}") from None
             interp._eval_block(tree, env)
         except BaseException:
             interp.modules.pop(name, None)
             raise
+        finally:
+            interp.current_file = prev_file
         return mod
     if name.split(".")[0] in ALLOWED_HOST:
         try:

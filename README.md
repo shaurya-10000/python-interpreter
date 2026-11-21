@@ -206,11 +206,13 @@ See `examples/modules/` for a multi-file program with a package. It is run under
 
 ### Debugging
 
-Runtime errors report the line number, for example:
+Syntax and runtime errors report the file name, line, and column, and render the offending source line with a caret (`^`) pointer:
 
-    Runtime Error: Name 'foo' is not defined at line 12
-
-Errors raised inside called functions print a call-stack traceback.
+    Traceback (most recent call last):
+      File "app.py", line 4, col 5, in greet
+        return missing_var
+        ^
+    NameError: Name 'missing_var' is not defined
 
 ## Architecture
 
@@ -223,7 +225,12 @@ Errors raised inside called functions print a call-stack traceback.
 | `ast_nodes.py` | AST node definitions for expressions and statements, with line numbers on nodes that can appear in runtime errors |
 | `parser.py` | Recursive descent parser that builds the AST from the token stream |
 | `environment.py` | Scoped variable store. Environments form a parent chain. |
-| `interpreter.py` | Tree-walking evaluator, class/instance runtime, call-stack tracking |
+| `interpreter.py` | Tree-walking evaluator and call-stack tracking |
+| `runtime.py` | Class/instance runtime, descriptors, MRO, exceptions, context managers |
+| `builtins_env.py` | Built-in functions, types, and exception hierarchy |
+| `modules.py` | Module loader, package resolution, relative imports |
+| `generators.py` | Generator runtime (`yield`, `yield from`, `send`, `throw`, `close`) |
+| `diagnostics.py` | Column-level tracebacks and source-snippet rendering |
 | `main.py` | CLI entry point and REPL with multi-line buffering |
 | `demo/` | Numbered demo scripts covering each feature area |
 | `tests/compare_cpython.py` | Runs each demo through CPython and the interpreter and compares stdout |
@@ -273,11 +280,10 @@ The workflow is defined in `.github/workflows/ci.yml`.
 
 - **Shorthand exceptions.** `raise("msg")` with a plain value and a bare `except as e` still work and bind `e` to the message string. Built-in runtime errors (such as division by zero) are mapped to the matching exception class by name.
 - **Only a subset of Python is implemented.** See the feature matrix.
-- **Class bodies** may contain methods, simple attribute assignments, and docstrings, but not nested classes or control flow.
 - **Generators run on helper threads.** Each started generator parks one thread until it finishes, so a generator abandoned half-way keeps its thread until the program exits, and its `finally` block does not run when it is garbage collected (call `close()` to run it). Each `yield` costs a thread handoff, which makes generators much slower than ordinary calls.
 - **Only `contextlib.contextmanager` is supported from `contextlib`.**
 - **Only an allow-list of standard-library modules can be imported.** `os` and `sys` are deliberately not available.
-- **Errors inside an imported module** report that module's line numbers without the file name. Relative imports (`from . import x`) are not supported.
+- **Errors inside imported modules** include the module file name, line, column, and source snippet. Relative imports (`from . import x`) are supported.
 
 ## Project structure
 
@@ -312,10 +318,8 @@ The workflow is defined in `.github/workflows/ci.yml`.
 ## Roadmap
 
 - [ ] Bytecode VM
-- [ ] Column-level error positions and source-snippet rendering
+- [x] Column-level error positions and source-snippet rendering
 
 ## License
 
 Released under the MIT license. See [LICENSE](./LICENSE).
-
-

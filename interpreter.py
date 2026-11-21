@@ -3,6 +3,7 @@ from types import FunctionType as _FunctionType
 
 from ast_nodes import *
 from builtins_env import setup_builtins, setup_exceptions
+from diagnostics import format_traceback
 from environment import Environment
 from generators import PyGenerator, comp_gen, eval_yield, eval_yield_from, is_generator_def
 from modules import exec_from_import, exec_import
@@ -19,6 +20,8 @@ class Interpreter:
     def __init__(self):
         self.global_env = Environment()
         self.call_stack = []
+        self.sources = {}
+        self.current_file = "<main>"
         setup_exceptions(self)
         setup_builtins(self)
         self.builtins_snapshot = dict(self.global_env.vars)
@@ -27,8 +30,13 @@ class Interpreter:
         self.search_paths = [os.getcwd()]
         self.global_env.set("__name__", "__main__")
 
+    def register_source(self, filename, source):
+        if filename and source is not None:
+            self.sources[filename] = source.splitlines()
+
     def set_script(self, path):
         path = os.path.abspath(path)
+        self.current_file = path
         self.global_env.set("__file__", path)
         folder = os.path.dirname(path)
         self.search_paths = [folder] + [p for p in self.search_paths if p != folder]
@@ -37,16 +45,31 @@ class Interpreter:
         self.virtual_modules[name] = source
         self.modules.pop(name, None)
 
-    def run(self, ast):
+    def run(self, ast, source=None, filename=None):
+        if filename is not None:
+            self.current_file = filename
+        if source is not None:
+            self.register_source(self.current_file, source)
         try:
             self._eval_block(ast, self.global_env)
         except (BreakException, ContinueException):
-            print("Runtime Error: 'break'/'continue' outside loop")
+            print("SyntaxError: 'break'/'continue' outside loop")
         except Exception as e:
-            print(f"Runtime Error: {e}")
             tb = getattr(e, "_pysubset_tb", None) or self.call_stack
-            for fname, fline in reversed(tb):
-                print(f"  in {fname}() at line {fline}")
+            loc = getattr(e, "_pysubset_loc", None)
+            if loc is not None:
+                ef, el, ec = loc
+            elif isinstance(e, PyRaise) and e.line:
+                ef, el, ec = self.current_file, e.line, 0
+            else:
+                ef, el, ec = self.current_file, 0, 0
+            if isinstance(e, PyRaise):
+                kind = e.inst.cls.name if e.inst is not None else "RuntimeError"
+                msg = e.message() if e.inst is not None else str(e.legacy)
+            else:
+                kind = type(e).__name__
+                msg = str(e)
+            print(format_traceback(kind, msg, ef, el, ec, self.sources, tb))
 
     def _eval_block(self, block, env):
         for stmt in block.statements:
@@ -59,12 +82,14 @@ class Interpreter:
             raise
         except Exception as e:
             line = getattr(node, "line", 0)
-            if isinstance(e, PyRaise):
-                if line and not e.line:
-                    e.line = line
-                raise
-            if line and " at line " not in str(e):
-                raise type(e)(str(e) + f" at line {line}") from None
+            col = getattr(node, "col", 0)
+            if isinstance(e, PyRaise) and line and not e.line:
+                e.line = line
+            if not hasattr(e, "_pysubset_loc") and line:
+                try:
+                    e._pysubset_loc = (self.current_file, line, col)
+                except Exception:
+                    pass
             raise
 
     def _eval_statement_inner(self, node, env):
@@ -146,7 +171,7 @@ class Interpreter:
                 return
             evaluated_defaults = [self._eval_expr(d, env) if d is not None else MISSING for d in node.defaults]
             evaluated_kwonly = [(k, self._eval_expr(d, env) if d is not None else MISSING) for k, d in (getattr(node, "kwonly", None) or [])]
-            frame_entry = (node.name, getattr(node, "line", 0))
+            frame_entry = (self.current_file, node.name, getattr(node, "line", 0), getattr(node, "col", 0))
             is_gen = is_generator_def(node)
 
             def func(*args, **kwargs):
@@ -584,7 +609,7 @@ def _eval_fstring(interp, raw, env):
 def _make_method(interp, m, owner, class_env, defaults, default_eval_env=None):
     kwarg = getattr(m, "kwarg", None)
     label = owner.name + "." + m.name
-    frame_entry = (label, getattr(m, "line", 0))
+    frame_entry = (interp.current_file, label, getattr(m, "line", 0), getattr(m, "col", 0))
     is_gen = is_generator_def(m)
     eval_env = default_eval_env if default_eval_env is not None else class_env
     kwonly_vals = [(k, interp._eval_expr(d, eval_env) if d is not None else MISSING) for k, d in (getattr(m, "kwonly", None) or [])]

@@ -42,7 +42,8 @@ def _unescape(s):
 
 
 class Lexer:
-    def __init__(self, source: str):
+    def __init__(self, source: str, filename: str = "<string>"):
+        self.filename = filename
         self.source = source
         self.pos = 0; self.line = 1; self.col = 1
         self.tokens = []
@@ -81,6 +82,13 @@ class Lexer:
             self.tokens.append(Token(TokenType.DEDENT, None, self.line, self.col))
         self.tokens.append(Token(TokenType.EOF, None, self.line, self.col))
         return self.tokens
+
+    def _syntax_error(self, msg, line, col):
+        err = SyntaxError(msg)
+        err.filename = self.filename
+        err.lineno = line
+        err.offset = col
+        return err
 
     def _peek(self, offset=0):
         i = self.pos + offset
@@ -137,7 +145,7 @@ class Lexer:
         buf = []
         while True:
             if self._at_end():
-                raise SyntaxError('Unterminated f-string at line ' + str(line))
+                raise self._syntax_error('Unterminated f-string', line, col)
             ch = self._peek()
             if triple:
                 if ch == quote and self._peek(1) == quote and self._peek(2) == quote:
@@ -147,7 +155,7 @@ class Lexer:
                 self._advance()
                 break
             elif ch == '\n':
-                raise SyntaxError('Unterminated f-string at line ' + str(line))
+                raise self._syntax_error('Unterminated f-string', line, col)
             if ch == '\\':
                 buf.append(self._advance())
                 if not self._at_end():
@@ -165,7 +173,7 @@ class Lexer:
         buf = []
         while True:
             if self._at_end():
-                raise SyntaxError(f'Unterminated string at line {line}, col {col}')
+                raise self._syntax_error('Unterminated string', line, col)
             ch = self._peek()
             if triple:
                 if ch == quote and self._peek(1) == quote and self._peek(2) == quote:
@@ -175,7 +183,7 @@ class Lexer:
                 self._advance()
                 break
             elif ch == '\n':
-                raise SyntaxError(f'Unterminated string at line {line}, col {col}')
+                raise self._syntax_error('Unterminated string', line, col)
             if ch == '\\':
                 buf.append(self._advance())
                 if not self._at_end():
@@ -205,4 +213,4 @@ class Lexer:
             if ch in '([{': self.paren_depth += 1
             elif ch in ')]}': self.paren_depth -= 1
             self.tokens.append(Token(one_char[ch], ch, line, col))
-        else: raise SyntaxError(f"Unexpected character {ch!r} at line {line}, col {col}")
+        else: raise self._syntax_error(f"Unexpected character {ch!r}", line, col)

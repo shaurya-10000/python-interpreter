@@ -2,7 +2,8 @@ from tokens import TokenType
 from ast_nodes import *
 
 class Parser:
-    def __init__(self, tokens):
+    def __init__(self, tokens, filename: str = "<string>"):
+        self.filename = filename
         self.tokens = tokens; self.pos = 0
 
     def parse(self) -> Block:
@@ -11,6 +12,14 @@ class Parser:
             if self._match(TokenType.NEWLINE): continue
             statements.append(self._statement())
         return Block(statements)
+
+    def _syntax_error(self, msg, tok=None):
+        t = tok or self._cur()
+        err = SyntaxError(msg)
+        err.filename = self.filename
+        err.lineno = t.line
+        err.offset = t.col
+        return err
 
     def _cur(self): return self.tokens[self.pos]
     def _check(self, ttype): return self._cur().type == ttype
@@ -21,10 +30,10 @@ class Parser:
     def _advance(self): tok = self._cur(); self.pos += 1; return tok
     def _expect(self, ttype, msg=""):
         if self._check(ttype): return self._advance()
-        raise SyntaxError(f"Line {self._cur().line}: Expected {ttype.name} {msg}, got {self._cur().type.name}")
+        raise self._syntax_error(f"Expected {ttype.name} {msg}, got {self._cur().type.name}")
 
     def _statement(self):
-        ln = self._cur().line
+        ln, col = self._cur().line, self._cur().col
         if self._match(TokenType.IF): return self._if_statement()
         if self._match(TokenType.WHILE): return self._while_statement()
         if self._match(TokenType.FOR): return self._for_statement()
@@ -41,7 +50,7 @@ class Parser:
                     var = self._expect(TokenType.IDENTIFIER).value
                 items.append((ctx, var))
                 if not self._match(TokenType.COMMA): break
-            return WithStmt(items, self._block(), line=ln)
+            return WithStmt(items, self._block(), line=ln, col=col)
         if self._match(TokenType.IMPORT):
             names = []
             while True:
@@ -50,7 +59,7 @@ class Parser:
                 names.append((dotted, alias))
                 if not self._match(TokenType.COMMA): break
             self._match(TokenType.NEWLINE)
-            return ImportStmt(names, line=ln)
+            return ImportStmt(names, line=ln, col=col)
         if self._check(TokenType.IDENTIFIER) and self._cur().value == "from" and self.tokens[self.pos + 1].type in (TokenType.IDENTIFIER, TokenType.DOT):
             self.pos += 1
             level = 0
@@ -73,7 +82,7 @@ class Parser:
                     if paren and self._check(TokenType.RPAREN): break
                 if paren: self._expect(TokenType.RPAREN)
             self._match(TokenType.NEWLINE)
-            return FromImportStmt(module, names, line=ln, level=level)
+            return FromImportStmt(module, names, line=ln, col=col, level=level)
         if self._check(TokenType.AT):
             decorators = self._decorators()
             self._expect(TokenType.DEF)
@@ -85,26 +94,26 @@ class Parser:
             while self._match(TokenType.COMMA):
                 names.append(self._expect(TokenType.IDENTIFIER).value)
             self._match(TokenType.NEWLINE)
-            return GlobalStmt(names, line=ln)
+            return GlobalStmt(names, line=ln, col=col)
         if self._match(TokenType.NONLOCAL):
             names = [self._expect(TokenType.IDENTIFIER).value]
             while self._match(TokenType.COMMA):
                 names.append(self._expect(TokenType.IDENTIFIER).value)
             self._match(TokenType.NEWLINE)
-            return NonlocalStmt(names, line=ln)
+            return NonlocalStmt(names, line=ln, col=col)
         if self._match(TokenType.DEL):
             targets = [self._expression()]
             while self._match(TokenType.COMMA):
                 targets.append(self._expression())
             self._match(TokenType.NEWLINE)
-            return DelStmt(targets, line=ln)
+            return DelStmt(targets, line=ln, col=col)
         if self._match(TokenType.ASSERT):
             test = self._expression()
             msg = None
             if self._match(TokenType.COMMA):
                 msg = self._expression()
             self._match(TokenType.NEWLINE)
-            return AssertStmt(test, msg, line=ln)
+            return AssertStmt(test, msg, line=ln, col=col)
         if self._match(TokenType.RAISE):
             val = None if self._check(TokenType.NEWLINE) else self._expression()
             cause = None
@@ -112,7 +121,7 @@ class Parser:
                 self.pos += 1
                 cause = self._expression()
             self._match(TokenType.NEWLINE)
-            rs = RaiseStmt(val, line=ln)
+            rs = RaiseStmt(val, line=ln, col=col)
             rs.cause = cause
             return rs
         if self._match(TokenType.PASS): self._expect(TokenType.NEWLINE); return PassStmt()
@@ -127,7 +136,7 @@ class Parser:
                 raise SyntaxError(f"Line {ln}: Invalid augmented assignment target")
             value = self._expression()
             self._expect(TokenType.NEWLINE)
-            return Assign(expr, BinOp(expr, op + "=", value, line=ln), line=ln)
+            return Assign(expr, BinOp(expr, op + "=", value, line=ln, col=col), line=ln, col=col)
         # Tuple assignment target: 'a, b = ...' parses as TupleExpr(left)
         if self._match(TokenType.COMMA):
             elements = [expr]
@@ -135,7 +144,7 @@ class Parser:
                 if self._check(TokenType.ASSIGN) or self._check(TokenType.NEWLINE): break
                 elements.append(self._expression())
                 if not self._match(TokenType.COMMA): break
-            expr = TupleExpr(elements, line=ln)
+            expr = TupleExpr(elements, line=ln, col=col)
         if self._match(TokenType.ASSIGN):
             if isinstance(expr, (Var, Subscript, Attribute, TupleExpr)):
                 value = self._expression()
@@ -146,7 +155,7 @@ class Parser:
                         if self._check(TokenType.NEWLINE): break
                         elems.append(self._expression())
                         if not self._match(TokenType.COMMA): break
-                    value = TupleExpr(elems, line=ln)
+                    value = TupleExpr(elems, line=ln, col=col)
                 if self._check(TokenType.ASSIGN):
                     targets = [expr, value]
                     while self._match(TokenType.ASSIGN):
@@ -156,11 +165,11 @@ class Parser:
                     for t in targets:
                         if not isinstance(t, (Var, Subscript, Attribute)):
                             raise SyntaxError(f"Line {ln}: Invalid assignment target")
-                    return ChainAssign(targets, value, line=ln)
-                self._expect(TokenType.NEWLINE); return Assign(expr, value, line=ln)
+                    return ChainAssign(targets, value, line=ln, col=col)
+                self._expect(TokenType.NEWLINE); return Assign(expr, value, line=ln, col=col)
             raise SyntaxError("Invalid assignment target")
         self._match(TokenType.NEWLINE)
-        return ExprStmt(expr, line=ln)
+        return ExprStmt(expr, line=ln, col=col)
 
     def _block(self):
         self._expect(TokenType.COLON); self._expect(TokenType.NEWLINE); self._expect(TokenType.INDENT)
@@ -198,7 +207,7 @@ class Parser:
         while self._match(TokenType.ELIF):
             elif_branches.append((self._expression(), self._block()))
         else_branch = self._block() if self._match(TokenType.ELSE) else None
-        return IfStmt(condition, then_branch, elif_branches, else_branch)
+        return IfStmt(condition, then_branch, elif_branches, else_branch, line=condition.line if hasattr(condition, "line") else 0, col=condition.col if hasattr(condition, "col") else 0)
 
     def _while_statement(self):
         cond = self._expression(); body = self._block()
@@ -212,24 +221,24 @@ class Parser:
         return ForStmt(target, it, body, else_body)
 
     def _for_target_atom(self):
-        ln = self._cur().line
+        ln, col = self._cur().line, self._cur().col
         if self._match(TokenType.STAR):
-            return Starred(self._for_target_atom(), line=ln)
+            return Starred(self._for_target_atom(), line=ln, col=col)
         return self._primary()
 
     def _for_target(self):
-        ln = self._cur().line
+        ln, col = self._cur().line, self._cur().col
         first = self._for_target_atom()
         if self._match(TokenType.COMMA):
             elements = [first]
             while not self._check(TokenType.IN):
                 elements.append(self._for_target_atom())
                 if not self._match(TokenType.COMMA): break
-            return TupleExpr(elements, line=ln)
+            return TupleExpr(elements, line=ln, col=col)
         return first
 
     def _func_def(self):
-        ln = self._cur().line
+        ln, col = self._cur().line, self._cur().col
         name = self._expect(TokenType.IDENTIFIER).value
         self._expect(TokenType.LPAREN)
         params, defaults, vararg, kwarg, kwonly = [], [], None, None, []
@@ -254,7 +263,7 @@ class Parser:
                 if self._check(TokenType.RPAREN): break
         self._expect(TokenType.RPAREN)
         body = self._block()
-        fd = FuncDef(name, params, defaults, vararg, body, line=ln, kwarg=kwarg)
+        fd = FuncDef(name, params, defaults, vararg, body, line=ln, col=col, kwarg=kwarg)
         fd.kwonly = kwonly
         return fd
 
@@ -284,26 +293,26 @@ class Parser:
         return decorators
 
     def _return_statement(self):
-        ln = self._cur().line
-        if self._check(TokenType.NEWLINE): self._advance(); return ReturnStmt(None, line=ln)
+        ln, col = self._cur().line, self._cur().col
+        if self._check(TokenType.NEWLINE): self._advance(); return ReturnStmt(None, line=ln, col=col)
         val = self._expression()
         if self._check(TokenType.COMMA):
             elems = [val]
             while self._match(TokenType.COMMA):
                 if self._check(TokenType.NEWLINE): break
                 elems.append(self._expression())
-            val = TupleExpr(elems, line=ln)
-        self._match(TokenType.NEWLINE); return ReturnStmt(val, line=ln)
+            val = TupleExpr(elems, line=ln, col=col)
+        self._match(TokenType.NEWLINE); return ReturnStmt(val, line=ln, col=col)
 
     def _expression(self):
         if self._match(TokenType.YIELD):
-            ln = self.tokens[self.pos - 1].line
+            ln, col = self.tokens[self.pos - 1].line, self.tokens[self.pos - 1].col
             if self._check(TokenType.IDENTIFIER) and self._cur().value == "from":
                 self.pos += 1
-                return YieldFromExpr(self._expression(), line=ln)
+                return YieldFromExpr(self._expression(), line=ln, col=col)
             if (self._check(TokenType.NEWLINE) or self._check(TokenType.RPAREN) or self._check(TokenType.RBRACKET)
                     or self._check(TokenType.RBRACE) or self._check(TokenType.EOF) or self._check(TokenType.DEDENT)):
-                return YieldExpr(None, line=ln)
+                return YieldExpr(None, line=ln, col=col)
             value = self._expression()
             if self._check(TokenType.COMMA):
                 elems = [value]
@@ -311,10 +320,10 @@ class Parser:
                     if self._check(TokenType.NEWLINE) or self._check(TokenType.RPAREN):
                         break
                     elems.append(self._expression())
-                value = TupleExpr(elems, line=ln)
-            return YieldExpr(value, line=ln)
+                value = TupleExpr(elems, line=ln, col=col)
+            return YieldExpr(value, line=ln, col=col)
         if self._match(TokenType.LAMBDA):
-            ln = self.tokens[self.pos - 1].line
+            ln, col = self.tokens[self.pos - 1].line, self.tokens[self.pos - 1].col
             params = []; defaults = []; vararg = None; kwarg = None
             if not self._check(TokenType.COLON):
                 while True:
@@ -327,7 +336,7 @@ class Parser:
                         defaults.append(self._or() if self._match(TokenType.ASSIGN) else None)
                     if not self._match(TokenType.COMMA): break
             self._expect(TokenType.COLON)
-            lam = Lambda(params, self._expression(), line=ln, defaults=defaults)
+            lam = Lambda(params, self._expression(), line=ln, col=col, defaults=defaults)
             lam.vararg = vararg
             lam.kwarg = kwarg
             return lam
@@ -335,16 +344,16 @@ class Parser:
         if self._check(TokenType.WALRUS):
             if not isinstance(expr, Var):
                 raise SyntaxError(f"Line {self._cur().line}: cannot use assignment expressions with this target")
-            ln = self._cur().line
+            ln, col = self._cur().line, self._cur().col
             self.pos += 1
-            return NamedExpr(expr.name, self._expression(), line=ln)
+            return NamedExpr(expr.name, self._expression(), line=ln, col=col)
         if self._check(TokenType.IF):
-            ln = self._cur().line
+            ln, col = self._cur().line, self._cur().col
             self.pos += 1
             cond = self._or()
             self._expect(TokenType.ELSE)
             other = self._expression()
-            return IfExpr(cond, expr, other, line=ln)
+            return IfExpr(cond, expr, other, line=ln, col=col)
         return expr
 
     def _or(self):
@@ -359,7 +368,7 @@ class Parser:
         if self._match(TokenType.NOT): return UnaryOp("not", self._not())
         return self._comparison()
     def _comparison(self):
-        ln = self._cur().line
+        ln, col = self._cur().line, self._cur().col
         left = self._bitor()
         result = None
         while True:
@@ -375,8 +384,8 @@ class Parser:
             else:
                 break
             right = self._bitor()
-            cmp = BinOp(left, op, right, line=ln)
-            result = cmp if result is None else BinOp(result, "and", cmp, line=ln)
+            cmp = BinOp(left, op, right, line=ln, col=col)
+            result = cmp if result is None else BinOp(result, "and", cmp, line=ln, col=col)
             left = right
         return result if result is not None else left
 
@@ -419,8 +428,8 @@ class Parser:
         if self._match(TokenType.MINUS, TokenType.PLUS, TokenType.TILDE):
             return UnaryOp(self.tokens[self.pos - 1].value, self._unary())
         if self._match(TokenType.STAR):
-            ln = self.tokens[self.pos - 1].line
-            return Starred(self._unary(), line=ln)
+            ln, col = self.tokens[self.pos - 1].line, self.tokens[self.pos - 1].col
+            return Starred(self._unary(), line=ln, col=col)
         return self._power()
 
     def _power(self):
@@ -428,7 +437,7 @@ class Parser:
         if self._match(TokenType.DOUBLE_STAR): expr = BinOp(expr, "**", self._unary())
         return expr
     def _call(self):
-        ln = self._cur().line
+        ln, col = self._cur().line, self._cur().col
         expr = self._primary()
         while True:
             if self._match(TokenType.LPAREN):
@@ -444,23 +453,23 @@ class Parser:
                         else:
                             val = self._expression()
                             if self._check(TokenType.FOR):
-                                val = Comp("gen", val, None, self._comp_clauses(), line=ln)
+                                val = Comp("gen", val, None, self._comp_clauses(), line=ln, col=col)
                             if (kwargs or splats) and not isinstance(val, Starred):
                                 raise SyntaxError(f"Line {ln}: positional argument follows keyword argument")
                             args.append(val)
                         if not self._match(TokenType.COMMA): break
                         if self._check(TokenType.RPAREN): break
                 self._expect(TokenType.RPAREN)
-                expr = Call(expr, args, line=ln, kwargs=kwargs, kw_splats=splats)
+                expr = Call(expr, args, line=ln, col=col, kwargs=kwargs, kw_splats=splats)
             elif self._match(TokenType.LBRACKET):
-                expr = Subscript(expr, self._subscript_index(), line=ln)
+                expr = Subscript(expr, self._subscript_index(), line=ln, col=col)
             elif self._match(TokenType.DOT):
-                expr = Attribute(expr, self._expect(TokenType.IDENTIFIER).value, line=ln)
+                expr = Attribute(expr, self._expect(TokenType.IDENTIFIER).value, line=ln, col=col)
             else: break
         return expr
 
     def _subscript_index(self):
-        ln = self._cur().line
+        ln, col = self._cur().line, self._cur().col
         lower = None if self._check(TokenType.COLON) else self._expression()
         if not self._check(TokenType.COLON):
             self._expect(TokenType.RBRACKET)
@@ -473,7 +482,7 @@ class Parser:
             if not self._check(TokenType.RBRACKET):
                 step = self._expression()
         self._expect(TokenType.RBRACKET)
-        return SliceExpr(lower, upper, step, line=ln)
+        return SliceExpr(lower, upper, step, line=ln, col=col)
 
     def _comp_clauses(self):
         clauses = []
@@ -489,14 +498,14 @@ class Parser:
         return clauses
 
     def _comp_target(self):
-        ln = self._cur().line
+        ln, col = self._cur().line, self._cur().col
         first = self._comp_target_atom()
         if self._check(TokenType.COMMA):
             items = [first]
             while self._match(TokenType.COMMA):
                 if self._check(TokenType.IN): break
                 items.append(self._comp_target_atom())
-            return TupleExpr(items, line=ln)
+            return TupleExpr(items, line=ln, col=col)
         return first
 
     def _comp_target_atom(self):
@@ -508,36 +517,36 @@ class Parser:
         return Var(tok.value, line=tok.line)
 
     def _primary(self):
-        ln = self._cur().line
-        if self._match(TokenType.NUMBER): return Number(self.tokens[self.pos - 1].value, line=ln)
+        ln, col = self._cur().line, self._cur().col
+        if self._match(TokenType.NUMBER): return Number(self.tokens[self.pos - 1].value, line=ln, col=col)
         if self._match(TokenType.STRING):
             val = self.tokens[self.pos - 1].value
             while self._check(TokenType.STRING):
                 val += self._advance().value
-            return String(val, line=ln)
-        if self._match(TokenType.FSTRING): return FString(self.tokens[self.pos - 1].value, line=ln)
-        if self._match(TokenType.TRUE): return Bool(True, line=ln)
-        if self._match(TokenType.FALSE): return Bool(False, line=ln)
+            return String(val, line=ln, col=col)
+        if self._match(TokenType.FSTRING): return FString(self.tokens[self.pos - 1].value, line=ln, col=col)
+        if self._match(TokenType.TRUE): return Bool(True, line=ln, col=col)
+        if self._match(TokenType.FALSE): return Bool(False, line=ln, col=col)
         if self._match(TokenType.NONE): return NoneType()
-        if self._match(TokenType.IDENTIFIER): return Var(self.tokens[self.pos - 1].value, line=ln)
+        if self._match(TokenType.IDENTIFIER): return Var(self.tokens[self.pos - 1].value, line=ln, col=col)
 
         # List / list comprehension
         if self._match(TokenType.LBRACKET):
-            if self._check(TokenType.RBRACKET): self._advance(); return ListExpr([], line=ln)
+            if self._check(TokenType.RBRACKET): self._advance(); return ListExpr([], line=ln, col=col)
             first = self._expression()
             if self._check(TokenType.FOR):
                 clauses = self._comp_clauses()
                 self._expect(TokenType.RBRACKET)
-                return Comp("list", first, None, clauses, line=ln)
+                return Comp("list", first, None, clauses, line=ln, col=col)
             elements = [first]
             while self._match(TokenType.COMMA):
                 if self._check(TokenType.RBRACKET): break
                 elements.append(self._expression())
-            self._expect(TokenType.RBRACKET); return ListExpr(elements, line=ln)
+            self._expect(TokenType.RBRACKET); return ListExpr(elements, line=ln, col=col)
 
         # Dict / dict comprehension / set / set comprehension
         if self._match(TokenType.LBRACE):
-            if self._check(TokenType.RBRACE): self._advance(); return DictExpr([], [], line=ln)
+            if self._check(TokenType.RBRACE): self._advance(); return DictExpr([], [], line=ln, col=col)
             if self._check(TokenType.DOUBLE_STAR):
                 keys, values = [], []
                 while True:
@@ -547,14 +556,14 @@ class Parser:
                         keys.append(self._expression()); self._expect(TokenType.COLON); values.append(self._expression())
                     if not self._match(TokenType.COMMA): break
                     if self._check(TokenType.RBRACE): break
-                self._expect(TokenType.RBRACE); return DictExpr(keys, values, line=ln)
+                self._expect(TokenType.RBRACE); return DictExpr(keys, values, line=ln, col=col)
             first = self._expression()
             if self._match(TokenType.COLON):
                 val = self._expression()
                 if self._check(TokenType.FOR):
                     clauses = self._comp_clauses()
                     self._expect(TokenType.RBRACE)
-                    return Comp("dict", first, val, clauses, line=ln)
+                    return Comp("dict", first, val, clauses, line=ln, col=col)
                 keys, values = [first], [val]
                 while self._match(TokenType.COMMA):
                     if self._check(TokenType.RBRACE): break
@@ -562,31 +571,31 @@ class Parser:
                         keys.append(None); values.append(self._or())
                     else:
                         keys.append(self._expression()); self._expect(TokenType.COLON); values.append(self._expression())
-                self._expect(TokenType.RBRACE); return DictExpr(keys, values, line=ln)
+                self._expect(TokenType.RBRACE); return DictExpr(keys, values, line=ln, col=col)
             if self._check(TokenType.FOR):
                 clauses = self._comp_clauses()
                 self._expect(TokenType.RBRACE)
-                return Comp("set", first, None, clauses, line=ln)
+                return Comp("set", first, None, clauses, line=ln, col=col)
             elements = [first]
             while self._match(TokenType.COMMA):
                 if self._check(TokenType.RBRACE): break
                 elements.append(self._expression())
-            self._expect(TokenType.RBRACE); return SetExpr(elements, line=ln)
+            self._expect(TokenType.RBRACE); return SetExpr(elements, line=ln, col=col)
 
         # Parenthesised expression / tuple / generator expression
         if self._match(TokenType.LPAREN):
-            if self._check(TokenType.RPAREN): self._advance(); return TupleExpr([], line=ln)
+            if self._check(TokenType.RPAREN): self._advance(); return TupleExpr([], line=ln, col=col)
             first = self._expression()
             if self._check(TokenType.FOR):
                 clauses = self._comp_clauses()
                 self._expect(TokenType.RPAREN)
-                return Comp("gen", first, None, clauses, line=ln)
+                return Comp("gen", first, None, clauses, line=ln, col=col)
             if self._match(TokenType.COMMA):
                 elements = [first]
                 while not self._check(TokenType.RPAREN):
                     elements.append(self._expression())
                     if not self._match(TokenType.COMMA): break
                 self._expect(TokenType.RPAREN)
-                return TupleExpr(elements, line=ln)
+                return TupleExpr(elements, line=ln, col=col)
             self._expect(TokenType.RPAREN); return first
-        raise SyntaxError(f"Unexpected token {self._cur().type.name} at line {self._cur().line}")
+        raise self._syntax_error(f"Unexpected token {self._cur().type.name}")
