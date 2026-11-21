@@ -60,9 +60,12 @@ Requires Python 3.12 or newer.
     git clone https://github.com/shaurya-10000/python-interpreter.git
     cd python-interpreter
 
-Run a demo:
+Run a demo (tree-walking interpreter or bytecode VM):
 
     python main.py demo/01_basics.py
+    python main.py --engine vm demo/01_basics.py
+    python main.py --dis demo/01_basics.py
+    python main.py --ast demo/01_basics.py
 
 Run the comparison suite against CPython:
 
@@ -231,6 +234,9 @@ Syntax and runtime errors report the file name, line, and column, and render the
 | `modules.py` | Module loader, package resolution, relative imports |
 | `generators.py` | Generator runtime (`yield`, `yield from`, `send`, `throw`, `close`) |
 | `diagnostics.py` | Column-level tracebacks and source-snippet rendering |
+| `opcodes.py` | Bytecode instruction set, `CodeObject`, and disassembler |
+| `compiler.py` | AST-to-bytecode compiler with static scope resolution and constant folding |
+| `vm.py` | Stack-based bytecode VM with exception tables and frame-suspended generators |
 | `main.py` | CLI entry point and REPL with multi-line buffering |
 | `demo/` | Numbered demo scripts covering each feature area |
 | `tests/compare_cpython.py` | Runs each demo through CPython and the interpreter and compares stdout |
@@ -249,10 +255,11 @@ Syntax and runtime errors report the file name, line, and column, and render the
 
 Benchmark: `fib(25)`, timed in-process so Python startup time is excluded.
 
-| Runtime | Time | Relative |
-| :--- | :--- | :--- |
-| CPython 3.12 | ~9 ms | 1x |
-| PySubset Interpreter | ~2,536 ms | ~270x slower |
+| Benchmark | CPython 3.12 | Tree-Walker | Bytecode VM |
+| :--- | :--- | :--- | :--- |
+| `fib(25)` | ~6.5 ms | ~1,189 ms | ~2,373 ms |
+| `sum_loop(10000)` | ~0.5 ms | ~9.4 ms | ~47.9 ms |
+| `generators(1000)` | ~0.14 ms | ~52.0 ms | ~14.9 ms (3.5x faster than tree) |
 
 That gap is expected for a tree-walking interpreter written in Python: it is an interpreter running on top of another interpreter. Timing whole processes (for example with `Measure-Command`) hides the gap, because interpreter startup dominates CPython's run.
 
@@ -318,7 +325,7 @@ The workflow is defined in `.github/workflows/ci.yml`.
 
 ## Roadmap
 
-- [ ] Bytecode VM
+- [x] Bytecode VM
 - [x] Column-level error positions and source-snippet rendering
 
 ## License

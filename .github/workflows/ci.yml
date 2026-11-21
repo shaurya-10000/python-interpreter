@@ -13,9 +13,13 @@ jobs:
           python-version: "3.12"
       - name: Run Unit Tests
         run: python -m unittest tests/test_unit.py -v
-      - name: Run Interpreter Smoke Test
-        run: python main.py tests/test_basic.py
-      - name: Compare with CPython
+      - name: Run Interpreter Smoke Test (Tree & VM)
+        run: |
+          python main.py tests/test_basic.py
+          python main.py --engine vm tests/test_basic.py
+          python main.py --dis tests/test_basic.py > /dev/null
+          python main.py --ast tests/test_basic.py > /dev/null
+      - name: Compare with CPython (Tree & VM)
         run: python tests/compare_cpython.py
       - name: Compare module examples with CPython
         run: python tests/compare_examples.py

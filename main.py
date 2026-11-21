@@ -1,5 +1,5 @@
 import argparse
-import sys
+import pprint
 from compiler import compile_module
 from diagnostics import format_traceback
 from interpreter import Interpreter
@@ -38,6 +38,7 @@ def main(argv=None):
     ap.add_argument("script", nargs="?", help="Python script to execute (omit for REPL)")
     ap.add_argument("--engine", choices=("tree", "vm"), default="tree", help="Execution engine")
     ap.add_argument("--dis", action="store_true", help="Disassemble bytecode and exit")
+    ap.add_argument("--ast", action="store_true", help="Print parsed AST and exit")
     args = ap.parse_args(argv)
 
     engine = VM() if args.engine == "vm" else Interpreter()
@@ -47,6 +48,10 @@ def main(argv=None):
         try:
             with open(filename, "r", encoding="utf-8") as f:
                 source = f.read()
+            if args.ast:
+                ast = Parser(Lexer(source, filename=filename).tokenize(), filename=filename).parse()
+                pprint.pprint(ast)
+                return
             if args.dis:
                 ast = Parser(Lexer(source, filename=filename).tokenize(), filename=filename).parse()
                 print(disassemble(compile_module(ast, filename=filename)))
