@@ -30,8 +30,6 @@ class DictExpr: keys: List[Any]; values: List[Any]; line: int = 0
 @dataclass
 class SetExpr: elements: List[Any]; line: int = 0
 @dataclass
-class ListComp: expr: Any; target: str; iterable: Any; condition: Any; line: int = 0
-@dataclass
 class Subscript: obj: Any; index: Any; line: int = 0
 @dataclass
 class Attribute: obj: Any; name: str; line: int = 0
@@ -73,8 +71,6 @@ class IfExpr: cond: Any; then: Any; other: Any; line: int = 0
 class Lambda: params: List[str]; body: Any; line: int = 0; defaults: Any = None
 @dataclass
 class SliceExpr: lower: Any; upper: Any; step: Any; line: int = 0
-@dataclass
-class DictComp: key: Any; value: Any; target: str; iterable: Any; condition: Any; line: int = 0
 
 @dataclass
 class GlobalStmt: names: List[str]; line: int = 0
