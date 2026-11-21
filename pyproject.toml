@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pysubset"
+version = "0.4.0"
+description = "A Python interpreter for a subset of Python, built from scratch in pure Python."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+[project.scripts]
+pysubset = "main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E402", "E501", "E701", "E702", "F403", "F405"]

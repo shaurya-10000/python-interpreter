@@ -270,6 +270,7 @@ The comparison harness is the main test suite. It discovers every file in `demo/
 
 CI runs the smoke test and the comparison on every push and pull request:
 
+    python -m unittest tests/test_unit.py -v
     python main.py tests/test_basic.py
     python tests/compare_cpython.py
     python tests/compare_examples.py
