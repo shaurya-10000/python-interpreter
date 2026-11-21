@@ -275,7 +275,8 @@ class _FuncCompiler:
         self.locals_set = set(locals_set or ())
         self.cell_set = set(cellvars)
         self.free_set = set(freevars)
-        self.loop_stack = []  # list of (continue_target, break_patches)
+        self.loop_stack = []  # list of (continue_target, break_patches, stack_delta)
+        self.finally_stack = []  # list of list[patch_idx]
         self.loc = (0, 0)
 
         # Reserve varnames for parameters first, then cellvars/other locals
@@ -431,7 +432,12 @@ class _FuncCompiler:
                 self.compile_expr(node.value)
             else:
                 self.emit(Op.LOAD_CONST, self._const_idx(None))
-            self.emit(Op.RETURN_VALUE)
+            if self.finally_stack:
+                self.emit(Op.WRAP_EXC, "return")
+                j = self.emit(Op.JUMP, None)
+                self.finally_stack[-1].append(j)
+            else:
+                self.emit(Op.RETURN_VALUE)
             return
         if t is BreakStmt:
             if not self.loop_stack:
@@ -471,7 +477,7 @@ class _FuncCompiler:
         if t is WhileStmt:
             loop_start = len(self.code.instructions)
             break_patches = []
-            self.loop_stack.append((loop_start, break_patches))
+            self.loop_stack.append((loop_start, break_patches, 0))
             self.compile_expr(node.condition)
             jf = self.emit(Op.JUMP_IF_FALSE, None)
             self.compile_block(node.body)
@@ -491,7 +497,7 @@ class _FuncCompiler:
             self.emit(Op.GET_ITER)
             loop_start = len(self.code.instructions)
             break_patches = []
-            self.loop_stack.append((loop_start, break_patches))
+            self.loop_stack.append((loop_start, break_patches, 1))
             for_iter = self.emit(Op.FOR_ITER, None)
             self.compile_target(node.target)
             self.compile_block(node.body)
@@ -582,7 +588,7 @@ class _FuncCompiler:
                 self.emit(Op.ASSERT_OP, 0)
             return
         if t is TryStmt:
-            self.emit(Op.EXEC_TRY, node)
+            self._compile_try(node)
             return
         if t is WithStmt:
             self.emit(Op.EXEC_WITH, node)
@@ -597,6 +603,68 @@ class _FuncCompiler:
                 self.emit(Op.IMPORT_FROM, node)
             return
         raise NotImplementedError(f"Compiler: statement not implemented: {t.__name__}")
+
+    def _compile_try(self, node):
+        depth = sum(x[2] for x in self.loop_stack)
+        handlers = node.handlers
+        if handlers is None and node.except_block is not None:
+            handlers = [(None, node.except_var, node.except_block)]
+        handlers = handlers or []
+
+        def compile_body():
+            if not handlers:
+                self.compile_block(node.try_block)
+                return
+            try_start = len(self.code.instructions)
+            self.compile_block(node.try_block)
+            try_end = len(self.code.instructions)
+            else_j = self.emit(Op.JUMP, None)
+            handler_pc = len(self.code.instructions)
+            end_jumps = []
+            for type_expr, var, blk in handlers:
+                next_j = None
+                if type_expr is not None:
+                    self.emit(Op.DUP_TOP)
+                    self.compile_expr(type_expr)
+                    self.emit(Op.EXC_MATCH)
+                    next_j = self.emit(Op.JUMP_IF_FALSE, None)
+                if var:
+                    self.emit(Op.EXC_BIND, type_expr is None)
+                    self.emit_store(var)
+                self.emit(Op.POP_TOP)
+                self.compile_block(blk)
+                end_jumps.append(self.emit(Op.JUMP, None))
+                if next_j is not None:
+                    self.patch(next_j)
+            self.emit(Op.RAISE_OBJ)
+            self.patch(else_j)
+            if node.else_block is not None:
+                self.compile_block(node.else_block)
+            for ej in end_jumps:
+                self.patch(ej)
+            self.code.exc_table.append((try_start, try_end, handler_pc, depth))
+
+        if node.finally_block is None:
+            compile_body()
+            return
+
+        fin_patches = []
+        self.finally_stack.append(fin_patches)
+        fin_start = len(self.code.instructions)
+        compile_body()
+        fin_end = len(self.code.instructions)
+        self.emit(Op.LOAD_CONST, self._const_idx((None, None)))
+        fin_normal_j = self.emit(Op.JUMP, None)
+        fin_exc_pc = len(self.code.instructions)
+        self.emit(Op.WRAP_EXC, "exc")
+        fin_body_pc = len(self.code.instructions)
+        self.patch(fin_normal_j, fin_body_pc)
+        for fp in fin_patches:
+            self.patch(fp, fin_body_pc)
+        self.finally_stack.pop()
+        self.compile_block(node.finally_block)
+        self.emit(Op.END_FINALLY)
+        self.code.exc_table.append((fin_start, fin_end, fin_exc_pc, depth))
 
     def compile_expr(self, node):
         self._set_loc(node)

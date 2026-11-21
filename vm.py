@@ -26,7 +26,7 @@ class Cell:
 
 
 class Frame:
-    __slots__ = ("code", "globals", "locals", "cells", "stack", "pc", "owner_class", "_sub_iter", "_sub_send", "_sub_err", "_pending_exc")
+    __slots__ = ("code", "globals", "locals", "cells", "stack", "pc", "owner_class", "_sub_iter", "_sub_send", "_sub_err", "_pending_exc", "_active_exc")
 
     def __init__(self, code, globals_dict, locals_list=None, cells=None, owner_class=None):
         self.code = code
@@ -40,6 +40,7 @@ class Frame:
         self._sub_send = None
         self._sub_err = None
         self._pending_exc = None
+        self._active_exc = None
 
 
 class VMGenerator:
@@ -540,6 +541,9 @@ class VM:
                         raise ContinueException()
                     elif op == Op.RAISE_OP:
                         if arg == 0:
+                            active = getattr(frame, "_active_exc", None)
+                            if active is not None:
+                                raise active
                             raise
                         if arg == 2:
                             cause = stack.pop(); exc_val = stack.pop()
@@ -548,6 +552,33 @@ class VM:
                                 exc.inst.attributes["__cause__"] = cause
                             raise exc
                         raise make_raise(self, stack.pop())
+                    elif op == Op.RAISE_OBJ:
+                        raise stack.pop()
+                    elif op == Op.EXC_MATCH:
+                        spec = stack.pop()
+                        exc_obj = stack.pop()
+                        from generators import _GenExit
+                        if isinstance(exc_obj, _GenExit):
+                            stack.append(False)
+                        else:
+                            inst = to_exc_instance(self, exc_obj)[0]
+                            stack.append(exc_match(inst, spec))
+                    elif op == Op.EXC_BIND:
+                        exc_obj = stack[-1]
+                        inst, legacy, host = to_exc_instance(self, exc_obj)
+                        val = legacy if legacy is not None else (strip_line(str(exc_obj)) if host and arg else inst)
+                        frame._active_exc = exc_obj
+                        stack.append(val)
+                    elif op == Op.WRAP_EXC:
+                        stack.append((arg, stack.pop()))
+                    elif op == Op.END_FINALLY:
+                        kind, val = stack.pop()
+                        if kind == "exc":
+                            raise val
+                        elif kind == "return":
+                            if in_subblock:
+                                raise ReturnException(val)
+                            return val
                     elif op == Op.ASSERT_OP:
                         msg = stack.pop() if arg else "assertion failed"
                         test = stack.pop()
@@ -624,7 +655,22 @@ class VM:
                     raise
                 frame.pc = matched[1] if isinstance(loop_sig, BreakException) else matched[0]
                 continue
-            except Exception as e:
+            except BaseException as e:
+                if isinstance(e, (_YieldSignal, ReturnException, BreakException, ContinueException)):
+                    raise
+                if code.exc_table:
+                    handler_found = None
+                    for start_pc, end_pc, h_pc, s_depth in code.exc_table:
+                        if start_pc <= pc < end_pc:
+                            handler_found = (h_pc, s_depth)
+                            break
+                    if handler_found is not None:
+                        h_pc, s_depth = handler_found
+                        del stack[s_depth:]
+                        stack.append(e)
+                        frame._active_exc = e
+                        frame.pc = h_pc
+                        continue
                 ln, col = locs[pc] if pc < len(locs) else (0, 0)
                 if isinstance(e, PyRaise) and ln and not e.line:
                     e.line = ln

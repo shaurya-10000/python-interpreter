@@ -62,6 +62,11 @@ class Op(IntEnum):
     BUILD_CLASS = auto()
 
     RAISE_OP = auto()
+    RAISE_OBJ = auto()
+    EXC_MATCH = auto()
+    EXC_BIND = auto()
+    WRAP_EXC = auto()
+    END_FINALLY = auto()
     ASSERT_OP = auto()
     EXEC_TRY = auto()
     EXEC_WITH = auto()
@@ -94,6 +99,7 @@ class CodeObject:
     is_generator: bool = False
     is_class_body: bool = False
     loop_ranges: List[Tuple[int, int, int, int]] = field(default_factory=list)
+    exc_table: List[Tuple[int, int, int, int]] = field(default_factory=list)
 
 
 def disassemble(code: CodeObject, indent: int = 0) -> str:

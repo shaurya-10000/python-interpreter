@@ -3,6 +3,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lexer import Lexer
 from parser import Parser
 from interpreter import Interpreter
+from vm import VM
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -18,10 +19,11 @@ def normalize_subset(out):
     import re
     return re.sub(r" at line \d+", "", out)
 
-def run_subset(src):
+def run_subset(src, engine="tree"):
+    runner = VM() if engine == "vm" else Interpreter()
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        Interpreter().run(Parser(Lexer(src).tokenize()).parse())
+        runner.run(Parser(Lexer(src).tokenize()).parse())
     return normalize_subset(buf.getvalue())
 
 # Demos whose PySubset syntax differs from CPython get a translation here.
@@ -49,17 +51,20 @@ def main():
     for name, sub_src, py_src in cases:
         try:
             expected = run_cpython(py_src)
-            actual = run_subset(sub_src)
+            actual_tree = run_subset(sub_src, "tree")
+            actual_vm = run_subset(sub_src, "vm")
         except Exception as e:
             print(f"FAIL  {name}  ({type(e).__name__}: {e})")
             continue
-        if expected == actual:
+        if expected == actual_tree == actual_vm:
             passed += 1
             print(f"PASS  {name}")
         else:
             print(f"FAIL  {name}")
-            print(f"      CPython : {expected!r}")
-            print(f"      PySubset: {actual!r}")
+            if expected != actual_tree:
+                print(f"      Tree    : {actual_tree!r}")
+            if expected != actual_vm:
+                print(f"      VM      : {actual_vm!r}")
 
     print(f"\n{passed}/{len(cases)} files match CPython")
 
