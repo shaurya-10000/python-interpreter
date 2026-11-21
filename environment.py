@@ -32,3 +32,23 @@ class Environment:
             e.vars[name] = value
         else:
             self.vars[name] = value
+
+    def delete(self, name):
+        if name in self.global_names:
+            root = self
+            while root.parent:
+                root = root.parent
+            if name not in root.vars:
+                raise NameError(f"Name '{name}' is not defined")
+            del root.vars[name]
+        elif name in self.nonlocal_names:
+            e = self.parent
+            while e is not None and name not in e.vars:
+                e = e.parent
+            if e is None:
+                raise NameError(f"no binding for nonlocal '{name}' found")
+            del e.vars[name]
+        else:
+            if name not in self.vars:
+                raise NameError(f"Name '{name}' is not defined")
+            del self.vars[name]

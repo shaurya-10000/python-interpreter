@@ -51,7 +51,7 @@ class FuncDef: name: str; params: List[str]; defaults: List[Any]; vararg: str; b
 @dataclass
 class ReturnStmt: value: Any; line: int = 0
 @dataclass
-class ClassDef: name: str; parent_class: Any; methods: List[Any]; attrs: Any = None; bases: Any = None
+class ClassDef: name: str; parent_class: Any; methods: List[Any]; attrs: Any = None; bases: Any = None; body: Any = None
 @dataclass
 class PassStmt: pass
 @dataclass
@@ -97,7 +97,7 @@ class WithStmt: items: List[Any]; body: Any; line: int = 0
 @dataclass
 class ImportStmt: names: List[Any]; line: int = 0
 @dataclass
-class FromImportStmt: module: str; names: Any; line: int = 0
+class FromImportStmt: module: str; names: Any; line: int = 0; level: int = 0
 
 @dataclass
 class YieldExpr: value: Any; line: int = 0

@@ -8,9 +8,10 @@ from generators import PyGenerator, comp_gen, eval_yield, eval_yield_from, is_ge
 from modules import exec_from_import, exec_import
 from runtime import (
     FAST_BINOPS, INPLACE_OPS, MISSING, BreakException, ContinueException,
-    PyRaise, ReturnException, SuperView, UserClass, UserInstance,
-    UserInstanceProxy, call_any, del_item, exec_try, exec_with, get_attr,
-    get_item, instance_truth, make_raise, set_attr, set_item,
+    PyClassMethod, PyProperty, PyRaise, PyStaticMethod, ReturnException,
+    SuperView, UserClass, UserInstance, UserInstanceProxy, call_any, del_item,
+    exec_try, exec_with, get_attr, get_item, instance_truth, make_raise,
+    set_attr, set_item,
 )
 
 
@@ -124,12 +125,7 @@ class Interpreter:
             iterable = self._eval_expr(node.iterable, env)
             broke = False
             for item in iterable:
-                if isinstance(node.target, Var):
-                    env.set(node.target.name, item)
-                elif isinstance(node.target, (ListExpr, TupleExpr)):
-                    for i, target_expr in enumerate(node.target.elements):
-                        if isinstance(target_expr, Var):
-                            env.set(target_expr.name, item[i])
+                _assign_to(self, node.target, item, env)
                 try:
                     self._eval_block(node.body, env)
                 except BreakException:
@@ -140,7 +136,15 @@ class Interpreter:
             if not broke and node.else_body is not None:
                 self._eval_block(node.else_body, env)
         elif isinstance(node, FuncDef):
-            evaluated_defaults = [self._eval_expr(d, env) if d is not None else None for d in node.defaults]
+            owner_cls = getattr(env, "_owner_class", None)
+            if owner_cls is not None:
+                defaults = [self._eval_expr(d, env) if d is not None else MISSING for d in node.defaults]
+                member = _make_method(self, node, owner_cls, env.parent, defaults, env)
+                for _d in reversed(node.decorators or []):
+                    member = call_any(self._eval_expr(_d, env), member)
+                env.set(node.name, member)
+                return
+            evaluated_defaults = [self._eval_expr(d, env) if d is not None else MISSING for d in node.defaults]
             evaluated_kwonly = [(k, self._eval_expr(d, env) if d is not None else MISSING) for k, d in (getattr(node, "kwonly", None) or [])]
             frame_entry = (node.name, getattr(node, "line", 0))
             is_gen = is_generator_def(node)
@@ -156,12 +160,16 @@ class Interpreter:
                 if evaluated_kwonly:
                     _bind_kwonly(node, func_env, kwargs, evaluated_kwonly)
                 for i, param in enumerate(node.params):
-                    if i < len(args) or param in kwargs:
-                        func_env.set(param, args[i] if i < len(args) else kwargs[param])
-                    elif evaluated_defaults[i] is not None:
+                    if i < len(args):
+                        if param in kwargs:
+                            raise TypeError(f"{node.name}() got multiple values for argument '{param}'")
+                        func_env.set(param, args[i])
+                    elif param in kwargs:
+                        func_env.set(param, kwargs[param])
+                    elif evaluated_defaults[i] is not MISSING:
                         func_env.set(param, evaluated_defaults[i])
                     else:
-                        func_env.set(param, None)
+                        raise TypeError(f"{node.name}() missing 1 required positional argument: '{param}'")
                 if is_gen:
                     return PyGenerator(self, node, func_env, node.name)
                 self.call_stack.append(frame_entry)
@@ -195,9 +203,7 @@ class Interpreter:
         elif isinstance(node, DelStmt):
             for t in node.targets:
                 if isinstance(t, Var):
-                    if t.name not in env.vars:
-                        raise NameError(f"Name '{t.name}' is not defined")
-                    del env.vars[t.name]
+                    env.delete(t.name)
                 elif isinstance(t, Subscript):
                     del_item(self._eval_expr(t.obj, env), self._eval_expr(t.index, env))
                 elif isinstance(t, Attribute):
@@ -335,16 +341,20 @@ class Interpreter:
             st = self._eval_expr(node.step, env) if node.step is not None else None
             return slice(lo, up, st)
         if t is Lambda:
-            lam_defaults = [self._eval_expr(d, env) if d is not None else None for d in (node.defaults or [None] * len(node.params))]
+            lam_defaults = [self._eval_expr(d, env) if d is not None else MISSING for d in (node.defaults or [None] * len(node.params))]
             def lam(*args, **kw):
                 lam_env = Environment(env)
                 for i, p in enumerate(node.params):
                     if i < len(args):
+                        if p in kw:
+                            raise TypeError(f"<lambda>() got multiple values for argument '{p}'")
                         lam_env.set(p, args[i])
                     elif p in kw:
                         lam_env.set(p, kw[p])
-                    else:
+                    elif lam_defaults[i] is not MISSING:
                         lam_env.set(p, lam_defaults[i])
+                    else:
+                        raise TypeError(f"<lambda>() missing 1 required positional argument: '{p}'")
                 if getattr(node, "vararg", None):
                     lam_env.set(node.vararg, tuple(args[len(node.params):]))
                 if getattr(node, "kwarg", None):
@@ -571,12 +581,13 @@ def _eval_fstring(interp, raw, env):
     return "".join(out)
 
 
-def _make_method(interp, m, owner, class_env, defaults):
+def _make_method(interp, m, owner, class_env, defaults, default_eval_env=None):
     kwarg = getattr(m, "kwarg", None)
     label = owner.name + "." + m.name
     frame_entry = (label, getattr(m, "line", 0))
     is_gen = is_generator_def(m)
-    kwonly_vals = [(k, interp._eval_expr(d, class_env) if d is not None else MISSING) for k, d in (getattr(m, "kwonly", None) or [])]
+    eval_env = default_eval_env if default_eval_env is not None else class_env
+    kwonly_vals = [(k, interp._eval_expr(d, eval_env) if d is not None else MISSING) for k, d in (getattr(m, "kwonly", None) or [])]
 
     def method_func(*args, **kwargs):
         if kwargs:
@@ -590,13 +601,15 @@ def _make_method(interp, m, owner, class_env, defaults):
             _bind_kwonly(m, scope, kwargs, kwonly_vals)
         for i, param in enumerate(m.params):
             if i < len(args):
+                if param in kwargs:
+                    raise TypeError(f"{m.name}() got multiple values for argument '{param}'")
                 scope.set(param, args[i])
             elif param in kwargs:
                 scope.set(param, kwargs[param])
-            elif defaults[i] is not None:
+            elif defaults[i] is not MISSING:
                 scope.set(param, defaults[i])
             else:
-                scope.set(param, None)
+                raise TypeError(f"{m.name}() missing 1 required positional argument: '{param}'")
         first = args[0] if args else None
         if isinstance(first, UserInstance):
             start = first.cls
@@ -639,16 +652,25 @@ def _exec_classdef(interp, node, env):
         bases.append(base)
     cls_obj = UserClass(node.name, bases[0] if bases else None, {}, bases)
     cls_obj.mro()
-    body = Environment(env)
-    for stmt in (node.attrs or []):
-        value = interp._eval_expr(stmt.value, body)
-        body.set(stmt.target.name, value)
-        cls_obj.attrs[stmt.target.name] = value
-    for m in node.methods:
-        defaults = [interp._eval_expr(d, body) if d is not None else None for d in m.defaults]
-        member = _make_method(interp, m, cls_obj, env, defaults)
-        for deco in reversed(getattr(m, "decorators", None) or []):
-            member = call_any(interp._eval_expr(deco, body), member)
-        body.set(m.name, member)
-        cls_obj.methods[m.name] = member
+    body_env = Environment(env)
+    body_env._owner_class = cls_obj
+    if node.body is not None:
+        interp._eval_block(node.body, body_env)
+        for k, v in body_env.vars.items():
+            if callable(v) or isinstance(v, (PyProperty, PyStaticMethod, PyClassMethod)):
+                cls_obj.methods[k] = v
+            else:
+                cls_obj.attrs[k] = v
+    else:
+        for stmt in (node.attrs or []):
+            value = interp._eval_expr(stmt.value, body_env)
+            body_env.set(stmt.target.name, value)
+            cls_obj.attrs[stmt.target.name] = value
+        for m in node.methods:
+            defaults = [interp._eval_expr(d, body_env) if d is not None else MISSING for d in m.defaults]
+            member = _make_method(interp, m, cls_obj, env, defaults, body_env)
+            for deco in reversed(getattr(m, "decorators", None) or []):
+                member = call_any(interp._eval_expr(deco, body_env), member)
+            body_env.set(m.name, member)
+            cls_obj.methods[m.name] = member
     env.set(node.name, cls_obj)

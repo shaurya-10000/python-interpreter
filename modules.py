@@ -38,6 +38,12 @@ def _new_module_env(interp, name, path):
     env.vars.update(interp.builtins_snapshot)
     env.vars["__name__"] = name
     env.vars["__file__"] = path
+    if os.path.basename(path) == "__init__.py" or any(k.startswith(name + ".") for k in interp.virtual_modules):
+        env.vars["__package__"] = name
+    elif "." in name:
+        env.vars["__package__"] = name.rsplit(".", 1)[0]
+    else:
+        env.vars["__package__"] = ""
     return env
 
 
@@ -132,11 +138,31 @@ def _module_public_names(interp, mod):
     return [k for k in dir(mod) if not k.startswith("_")]
 
 
+def _resolve_relative_module(node, env):
+    level = getattr(node, "level", 0)
+    if level == 0:
+        return node.module
+    pkg = env.vars.get("__package__")
+    if pkg is None:
+        mod_name = env.vars.get("__name__", "")
+        pkg = mod_name.rsplit(".", 1)[0] if "." in mod_name else ""
+    if not pkg:
+        raise ImportError("attempted relative import with no known parent package")
+    parts = pkg.split(".")
+    if level - 1 > len(parts):
+        raise ImportError("attempted relative import beyond top-level package")
+    base_parts = parts[:len(parts) - (level - 1)]
+    if node.module:
+        base_parts.append(node.module)
+    return ".".join(base_parts)
+
+
 def exec_from_import(interp, node, env):
-    mod = _import_chain(interp, node.module)[-1]
+    target_module = _resolve_relative_module(node, env)
+    mod = _import_chain(interp, target_module)[-1]
     if node.names is None:
         for name in _module_public_names(interp, mod):
-            env.set(name, _import_name(interp, mod, node.module, name))
+            env.set(name, _import_name(interp, mod, target_module, name))
         return
     for name, alias in node.names:
-        env.set(alias or name, _import_name(interp, mod, node.module, name))
+        env.set(alias or name, _import_name(interp, mod, target_module, name))

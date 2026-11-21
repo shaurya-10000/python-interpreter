@@ -51,9 +51,14 @@ class Parser:
                 if not self._match(TokenType.COMMA): break
             self._match(TokenType.NEWLINE)
             return ImportStmt(names, line=ln)
-        if self._check(TokenType.IDENTIFIER) and self._cur().value == "from" and self.tokens[self.pos + 1].type == TokenType.IDENTIFIER:
+        if self._check(TokenType.IDENTIFIER) and self._cur().value == "from" and self.tokens[self.pos + 1].type in (TokenType.IDENTIFIER, TokenType.DOT):
             self.pos += 1
-            module = self._dotted_name()
+            level = 0
+            while self._match(TokenType.DOT):
+                level += 1
+            module = self._dotted_name() if self._check(TokenType.IDENTIFIER) else ""
+            if level == 0 and not module:
+                raise SyntaxError(f"Line {ln}: Expected module name in from-import")
             self._expect(TokenType.IMPORT)
             names = []
             if self._match(TokenType.STAR):
@@ -68,7 +73,7 @@ class Parser:
                     if paren and self._check(TokenType.RPAREN): break
                 if paren: self._expect(TokenType.RPAREN)
             self._match(TokenType.NEWLINE)
-            return FromImportStmt(module, names, line=ln)
+            return FromImportStmt(module, names, line=ln, level=level)
         if self._check(TokenType.AT):
             decorators = self._decorators()
             self._expect(TokenType.DEF)
@@ -199,22 +204,30 @@ class Parser:
         cond = self._expression(); body = self._block()
         else_body = self._block() if self._match(TokenType.ELSE) else None
         return WhileStmt(cond, body, else_body)
+
     def _for_statement(self):
         target = self._for_target(); self._expect(TokenType.IN)
         it = self._expression(); body = self._block()
         else_body = self._block() if self._match(TokenType.ELSE) else None
         return ForStmt(target, it, body, else_body)
 
+    def _for_target_atom(self):
+        ln = self._cur().line
+        if self._match(TokenType.STAR):
+            return Starred(self._for_target_atom(), line=ln)
+        return self._primary()
+
     def _for_target(self):
         ln = self._cur().line
-        first = self._primary()
+        first = self._for_target_atom()
         if self._match(TokenType.COMMA):
-            elements = [first, self._primary()]
-            while self._match(TokenType.COMMA):
-                elements.append(self._primary())
-            return ListExpr(elements, line=ln)
+            elements = [first]
+            while not self._check(TokenType.IN):
+                elements.append(self._for_target_atom())
+                if not self._match(TokenType.COMMA): break
+            return TupleExpr(elements, line=ln)
         return first
-        
+
     def _func_def(self):
         ln = self._cur().line
         name = self._expect(TokenType.IDENTIFIER).value
@@ -254,30 +267,8 @@ class Parser:
                 if not self._match(TokenType.COMMA): break
             self._expect(TokenType.RPAREN)
         parent_class = bases[0] if bases else None
-        self._expect(TokenType.COLON); self._expect(TokenType.NEWLINE); self._expect(TokenType.INDENT)
-        methods = []; attrs = []
-        while not self._check(TokenType.DEDENT) and not self._check(TokenType.EOF):
-            if self._match(TokenType.NEWLINE): continue
-            if self._check(TokenType.AT):
-                decorators = self._decorators()
-                self._expect(TokenType.DEF)
-                fd = self._func_def()
-                fd.decorators = decorators
-                methods.append(fd)
-            elif self._match(TokenType.DEF):
-                methods.append(self._func_def())
-            elif self._match(TokenType.PASS):
-                self._match(TokenType.NEWLINE)
-            elif self._check(TokenType.STRING):
-                self._statement()
-            elif self._check(TokenType.IDENTIFIER) and self.tokens[self.pos + 1].type == TokenType.ASSIGN:
-                stmt = self._statement()
-                if not isinstance(stmt, Assign):
-                    raise SyntaxError(f"Line {self._cur().line}: Only simple assignments are allowed in a class body")
-                attrs.append(stmt)
-            else:
-                raise SyntaxError(f"Line {self._cur().line}: Unsupported statement in class body")
-        self._expect(TokenType.DEDENT); return ClassDef(name, parent_class, methods, attrs, bases)
+        body = self._block()
+        return ClassDef(name, parent_class, [], [], bases, body=body)
 
     def _dotted_name(self):
         parts = [self._expect(TokenType.IDENTIFIER).value]
@@ -599,4 +590,3 @@ class Parser:
                 return TupleExpr(elements, line=ln)
             self._expect(TokenType.RPAREN); return first
         raise SyntaxError(f"Unexpected token {self._cur().type.name} at line {self._cur().line}")
-
